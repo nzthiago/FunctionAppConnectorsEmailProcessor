@@ -1,0 +1,54 @@
+# Azure Functions
+bin
+obj
+csx
+.vs
+edge
+Publish
+.vscode
+
+*.user
+*.suo
+*.cscfg
+*.cachefile
+*.pyc
+
+# Local settings
+local.settings.json
+
+# Azure Developer CLI
+.azure/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# NuGet
+*.nupkg
+**/packages/*
+*.nuget.props
+*.nuget.targets
+
+# Node (if applicable)
+node_modules/
+
+# Python (if applicable)
+__pycache__/
+*.py[cod]
+.env
+.venv/

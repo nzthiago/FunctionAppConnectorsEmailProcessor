@@ -1,0 +1,13 @@
+# Tip: You might need to modify the port value on the 
+# localhost URL when debugging in Visual Studio.
+
+@functionAppUrl = https://func-dwmyyn33pautm.azurewebsites.net
+@httpPostCode = JFpvFAtVfXTNUshy0VgTOTw9dobT7GNZAQQIXBZucsBrAzFuCHjS4w==
+
+POST {{functionAppUrl}}/api/OnNewImportantEmailReceived?code={{httpPostCode}}
+content-type: application/json
+
+{
+    "name": "Awesome Developer",
+    "age": 25
+}
