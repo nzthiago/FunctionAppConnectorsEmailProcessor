@@ -24,7 +24,7 @@ metadata description = 'Creates Azure Functions Flex Consumption and AI Gateway 
 param userPrincipalId string  = deployer().objectId
 
 @description('Name of the Azure Function that handles the Office 365 connector trigger.')
-param office365FunctionName string = 'Office365Trigger'
+param office365FunctionName string = 'OnNewImportantEmailReceived'
 
 @description('The Teams Team ID (groupId) to post notifications to.')
 param teamsTeamId string = ''

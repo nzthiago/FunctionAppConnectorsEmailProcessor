@@ -1,13 +1,65 @@
 # Tip: You might need to modify the port value on the 
 # localhost URL when debugging in Visual Studio.
+#
+# Set these environment variables (or use a .env file):
+#   FUNCTION_APP_URL  - e.g. https://func-xxxx.azurewebsites.net
+#   HTTP_POST_CODE    - the function host key
 
-@functionAppUrl = https://func-dwmyyn33pautm.azurewebsites.net
-@httpPostCode = JFpvFAtVfXTNUshy0VgTOTw9dobT7GNZAQQIXBZucsBrAzFuCHjS4w==
+@functionAppUrl = {{$dotenv FUNCTION_APP_URL}}
+@httpPostCode = {{$dotenv HTTP_POST_CODE}}
 
+### Simulate AI Gateway trigger callback — important email (matches sender list)
 POST {{functionAppUrl}}/api/OnNewImportantEmailReceived?code={{httpPostCode}}
 content-type: application/json
 
 {
-    "name": "Awesome Developer",
-    "age": 25
+  "body": {
+    "value": [
+      {
+        "id": "AAMkADlmOTA3NWNm",
+        "receivedDateTime": "2026-03-25T10:30:00+00:00",
+        "hasAttachments": false,
+        "subject": "Urgent: action needed on connector demo",
+        "bodyPreview": "Please review the connector demo before the MVP Summit session.",
+        "importance": "high",
+        "isRead": false,
+        "isHtml": true,
+        "body": "<html><body>Please review the connector demo before the MVP Summit session. This is critical.</body></html>",
+        "from": "thalme@microsoft.com",
+        "toRecipients": "recipient@microsoft.com",
+        "ccRecipients": null,
+        "bccRecipients": null,
+        "replyTo": null,
+        "attachments": []
+      }
+    ]
+  }
+}
+
+### Simulate AI Gateway trigger callback — non-important email (should be skipped)
+POST {{functionAppUrl}}/api/OnNewImportantEmailReceived?code={{httpPostCode}}
+content-type: application/json
+
+{
+  "body": {
+    "value": [
+      {
+        "id": "AAMkADlmOTA3NWNn",
+        "receivedDateTime": "2026-03-25T11:00:00+00:00",
+        "hasAttachments": false,
+        "subject": "Weekly newsletter",
+        "bodyPreview": "Here are this week's top stories.",
+        "importance": "normal",
+        "isRead": false,
+        "isHtml": true,
+        "body": "<html><body>Here are this week's top stories.</body></html>",
+        "from": "newsletter@contoso.com",
+        "toRecipients": "recipient@microsoft.com",
+        "ccRecipients": null,
+        "bccRecipients": null,
+        "replyTo": null,
+        "attachments": []
+      }
+    ]
+  }
 }
