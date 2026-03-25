@@ -27,12 +27,12 @@ else
     exit 1
 fi
 
-# Fetch the function key
-echo -e "${CYAN}Fetching function key for ${office365FunctionName}...${NC}"
-functionKey=$(az functionapp function keys list --function-name "${office365FunctionName}" --name "${functionAppName}" --resource-group "${resourceGroupName}" --query "default" -o tsv)
+# Fetch the connector extension system key
+echo -e "${CYAN}Fetching connector extension key for ${functionAppName}...${NC}"
+connectorExtensionKey=$(az functionapp keys list -g "${resourceGroupName}" -n "${functionAppName}" --query "systemKeys.connector_extension" -o tsv)
 
 triggerName="${aiGatewayConnectionName}-trigger"
-callbackUrl="https://${functionAppDefaultHostname}/api/${office365FunctionName}?code=${functionKey}"
+callbackUrl="https://${functionAppName}.azurewebsites.net/runtime/webhooks/connector?functionName=${office365FunctionName}&code=${connectorExtensionKey}"
 
 apiUrl="https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.Web/aigateways/${aiGatewayName}/triggerconfigs/${triggerName}?api-version=2026-03-01-preview"
 

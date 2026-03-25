@@ -20,15 +20,35 @@ This sample demonstrates how to use **Azure Functions** with **AI Gateway connec
 
 ## Getting Started
 
-### 1. Deploy to Azure
+### 1. Clone Required Repositories
+
+This project references two companion libraries via local project references (NuGet packages are not yet available). Clone all three repositories into the **same parent directory**:
 
 ```bash
+git clone <url>/FunctionAppConnectorsEmailProcessor
+git clone <url>/azure-functions-connector-extension
+git clone <url>/azure-logicapps-connector-sdk
+```
+
+Your folder structure should look like:
+
+```
+connectors/
+├── FunctionAppConnectorsEmailProcessor/
+├── azure-functions-connector-extension/
+└── azure-logicapps-connector-sdk/
+```
+
+### 2. Deploy to Azure
+
+```bash
+cd FunctionAppConnectorsEmailProcessor
 azd up
 ```
 
 This provisions all infrastructure (Function App, AI Gateway, Storage, Application Insights) and deploys the function code. After deployment, a post-deploy script automatically creates the AI Gateway trigger configuration.
 
-### 2. Authorize the Office 365 Connection
+### 3. Authorize the Office 365 Connection
 
 > **⚠️ Important:** After deployment, you **must** authorize the Office 365 connector connection before the trigger will work. The connection is created in a disabled state and requires your OAuth consent.
 
@@ -41,9 +61,9 @@ This provisions all infrastructure (Function App, AI Gateway, Storage, Applicati
 
 Until this step is completed, the trigger will not fire and the function will not receive email notifications.
 
-### 3. Test the Solution
+### 4. Test the Solution
 
-Once the connection is authorized, the trigger monitors the configured inbox folder (`Inbox` by default). Send an email to the authorized account and the `OnNewImportantEmailReceived` function will be invoked via an HTTP POST callback.
+Once the connection is authorized, the trigger monitors the configured inbox folder (`Inbox` by default). It takes a few minutes for the connection and trigger to start. Send an email to the authorized account and the `OnNewImportantEmailReceived` function will be invoked via an HTTP POST callback.
 
 You can also manually test the function endpoint using the [test.http](test.http) file (update the URL and function key to match your deployment).
 

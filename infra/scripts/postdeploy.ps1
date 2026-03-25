@@ -11,12 +11,12 @@ $functionAppName = $outputs.functionAppName
 $functionAppDefaultHostname = $outputs.functionAppDefaultHostname
 $office365FunctionName = $outputs.office365FunctionName
 
-# Fetch the function key
-Write-Host "Fetching function key for $office365FunctionName..." -ForegroundColor Cyan
-$functionKey = (az functionapp function keys list --function-name $office365FunctionName --name $functionAppName --resource-group $resourceGroupName --query "default" -o tsv)
+# Fetch the connector extension system key
+Write-Host "Fetching connector extension key for $functionAppName..." -ForegroundColor Cyan
+$connectorExtensionKey = (az functionapp keys list -g $resourceGroupName -n $functionAppName --query "systemKeys.connector_extension" -o tsv)
 
 $triggerName = "$aiGatewayConnectionName-trigger"
-$callbackUrl = "https://$functionAppDefaultHostname/api/$office365FunctionName?code=$functionKey"
+$callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$office365FunctionName&code=$connectorExtensionKey"
 
 $apiUrl = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Web/aigateways/$aiGatewayName/triggerconfigs/${triggerName}?api-version=2026-03-01-preview"
 
@@ -37,12 +37,16 @@ $body = @{
       callbackUrl = $callbackUrl
     }
   }
-} | ConvertTo-Json -Depth 5 -Compress
+} | ConvertTo-Json -Depth 5
+
+$bodyFile = [System.IO.Path]::GetTempFileName()
+$body | Out-File -FilePath $bodyFile -Encoding utf8
 
 Write-Host "  API URL: $apiUrl" -ForegroundColor Cyan
 Write-Host "  Callback URL: $callbackUrl" -ForegroundColor Cyan
 
-az rest --method PUT --url $apiUrl --body $body
+az rest --method PUT --url $apiUrl --body "@$bodyFile" --headers "Content-Type=application/json"
+Remove-Item $bodyFile -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to create AI Gateway trigger config." -ForegroundColor Red
