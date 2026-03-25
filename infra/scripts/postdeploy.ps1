@@ -1,4 +1,4 @@
-Write-Host "Creating AI Gateway trigger config..." -ForegroundColor Yellow
+Write-Host "Post-deployment configuration..." -ForegroundColor Yellow
 
 # Get outputs from azd
 $outputs = azd env get-values --output json | ConvertFrom-Json
@@ -10,6 +10,9 @@ $aiGatewayConnectionName = $outputs.aiGatewayConnectionName
 $functionAppName = $outputs.functionAppName
 $functionAppDefaultHostname = $outputs.functionAppDefaultHostname
 $office365FunctionName = $outputs.office365FunctionName
+
+# --- Create AI Gateway trigger config ---
+Write-Host "Creating AI Gateway trigger config..." -ForegroundColor Yellow
 
 # Fetch the connector extension system key
 Write-Host "Fetching connector extension key for $functionAppName..." -ForegroundColor Cyan
@@ -57,17 +60,21 @@ Write-Host "✅ AI Gateway trigger config created successfully!" -ForegroundColo
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  ⚠️  IMPORTANT: Authorize the Office 365 Connection                 ║" -ForegroundColor Yellow
+Write-Host "║  ⚠️  IMPORTANT: Authorize the Office 365 AND Teams Connections       ║" -ForegroundColor Yellow
 Write-Host "╠══════════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  Before testing, you must authorize the Office 365 connector:        ║" -ForegroundColor Yellow
+Write-Host "║  Before testing, you must authorize both connectors:                 ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  1. Open the Azure Portal: https://portal.azure.com                  ║" -ForegroundColor Yellow
 Write-Host "║  2. Navigate to Resource Group: $resourceGroupName" -ForegroundColor Yellow
 Write-Host "║  3. Open the AI Gateway resource: $aiGatewayName" -ForegroundColor Yellow
-Write-Host "║  4. Go to Connections -> select the Office 365 connection             ║" -ForegroundColor Yellow
-Write-Host "║  5. Click 'Authorize' and sign in with your Office 365 account       ║" -ForegroundColor Yellow
+Write-Host "║  4. Go to Connections -> authorize the Office 365 connection          ║" -ForegroundColor Yellow
+Write-Host "║  5. Go to Connections -> authorize the Teams connection               ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  The trigger will NOT fire until the connection is authorized.        ║" -ForegroundColor Yellow
+Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
+Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow
+Write-Host "║                                                                      ║" -ForegroundColor Yellow
+Write-Host "║  After authorizing Teams, set TEAMS_CONNECTION_RUNTIME_URL,           ║" -ForegroundColor Yellow
+Write-Host "║  TEAMS_TEAM_ID, and TEAMS_CHANNEL_ID in the Function App settings.   ║" -ForegroundColor Yellow
 Write-Host "╚══════════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
 Write-Host ""

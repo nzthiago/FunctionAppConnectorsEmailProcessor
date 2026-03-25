@@ -9,7 +9,7 @@ WHITE='\033[1;37m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}Creating AI Gateway trigger config...${NC}"
+echo -e "${YELLOW}Post-deployment configuration...${NC}"
 
 # Get outputs from azd
 outputs=$(azd env get-values --output json)
@@ -26,6 +26,9 @@ else
     echo -e "${RED}Error: jq is required for this script. Please install jq.${NC}"
     exit 1
 fi
+
+# --- Create AI Gateway trigger config ---
+echo -e "${YELLOW}Creating AI Gateway trigger config...${NC}"
 
 # Fetch the connector extension system key
 echo -e "${CYAN}Fetching connector extension key for ${functionAppName}...${NC}"
@@ -71,14 +74,18 @@ echo -e "${YELLOW}╔═══════════════════�
 echo -e "${YELLOW}║  ⚠️  IMPORTANT: Authorize the Office 365 Connection                 ║${NC}"
 echo -e "${YELLOW}╠══════════════════════════════════════════════════════════════════════╣${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  Before testing, you must authorize the Office 365 connector:        ║${NC}"
+echo -e "${YELLOW}║  Before testing, you must authorize both connectors:                 ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  1. Open the Azure Portal: https://portal.azure.com                  ║${NC}"
 echo -e "${YELLOW}║  2. Navigate to Resource Group: ${resourceGroupName}${NC}"
 echo -e "${YELLOW}║  3. Open the AI Gateway resource: ${aiGatewayName}${NC}"
-echo -e "${YELLOW}║  4. Go to Connections → select the Office 365 connection             ║${NC}"
-echo -e "${YELLOW}║  5. Click 'Authorize' and sign in with your Office 365 account       ║${NC}"
+echo -e "${YELLOW}║  4. Go to Connections → authorize the Office 365 connection          ║${NC}"
+echo -e "${YELLOW}║  5. Go to Connections → authorize the Teams connection               ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  The trigger will NOT fire until the connection is authorized.        ║${NC}"
+echo -e "${YELLOW}║  The trigger will NOT fire until Office 365 connection is authorized. ║${NC}"
+echo -e "${YELLOW}║  Teams notifications require the Teams connection to be authorized.   ║${NC}"
+echo -e "${YELLOW}║                                                                      ║${NC}"
+echo -e "${YELLOW}║  After authorizing Teams, set TEAMS_CONNECTION_RUNTIME_URL,           ║${NC}"
+echo -e "${YELLOW}║  TEAMS_TEAM_ID, and TEAMS_CHANNEL_ID in the Function App settings.   ║${NC}"
 echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""

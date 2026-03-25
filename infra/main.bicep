@@ -26,6 +26,12 @@ param userPrincipalId string  = deployer().objectId
 @description('Name of the Azure Function that handles the Office 365 connector trigger.')
 param office365FunctionName string = 'Office365Trigger'
 
+@description('The Teams Team ID (groupId) to post notifications to.')
+param teamsTeamId string = ''
+
+@description('The Teams Channel ID to post notifications to.')
+param teamsChannelId string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -39,6 +45,7 @@ var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
 var appInsightsName = '${abbrs.insightsComponents}${resourceToken}'
 var aiGatewayName = '${abbrs.aiGateways}${resourceToken}'
 var aiGatewayConnectionName = '${abbrs.aiGatewaysConnections}${resourceToken}'
+var aiGatewayTeamsConnectionName = '${abbrs.aiGatewaysConnections}teams-${resourceToken}'
 
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, environmentName)), 7)}'
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -176,6 +183,8 @@ module aiGateway './aigateway.bicep' = {
     tags: tags
     connectionName: aiGatewayConnectionName
     connectorName: 'office365'
+    teamsConnectionName: aiGatewayTeamsConnectionName
+    functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
   }
 }
 
@@ -229,6 +238,10 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           AZURE_CLIENT_ID: funcUserAssignedIdentity.outputs.clientId //Used by Open Telemetry managed identity
           AI_GATEWAY_NAME: aiGateway.outputs.name
           AI_GATEWAY_CONNECTION_NAME: aiGateway.outputs.connectionName
+          AI_GATEWAY_TEAMS_CONNECTION_NAME: aiGateway.outputs.teamsConnectionName
+          TEAMS_CONNECTION_RUNTIME_URL: aiGateway.outputs.teamsConnectionRuntimeUrl
+          TEAMS_TEAM_ID: teamsTeamId
+          TEAMS_CHANNEL_ID: teamsChannelId
         }
       }]
   }
@@ -261,6 +274,12 @@ output aiGatewayConnectionResourceId string = aiGateway.outputs.connectionResour
 
 @description('The name of the created AI Gateway Connection.')
 output aiGatewayConnectionName string = aiGateway.outputs.connectionName
+
+@description('The name of the created Teams AI Gateway Connection.')
+output aiGatewayTeamsConnectionName string = aiGateway.outputs.teamsConnectionName
+
+@description('The principal ID of the Function App user-assigned managed identity.')
+output functionAppIdentityPrincipalId string = funcUserAssignedIdentity.outputs.principalId
 
 @description('The name of the Function that handles the Office 365 connector trigger.')
 output office365FunctionName string = office365FunctionName
