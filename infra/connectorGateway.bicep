@@ -7,29 +7,29 @@ param teamsConnectionName string = ''
 param functionAppPrincipalId string = ''
 param tenantId string = tenant().tenantId
 
-resource aiGateway 'Microsoft.Web/aigateways@2026-03-01-preview' = {
+resource connectorGateway 'Microsoft.Web/connectorGateways@2026-05-01-preview' = {
   name: name
   location: location
   tags: tags
 }
 
-resource aiGatewayConnection 'Microsoft.Web/aigateways/connections@2026-03-01-preview' = if (!empty(connectionName)) {
-  parent: aiGateway
+resource connectorGatewayConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(connectionName)) {
+  parent: connectorGateway
   name: connectionName
   properties: {
     connectorName: connectorName
   }
 }
 
-resource teamsConnection 'Microsoft.Web/aigateways/connections@2026-03-01-preview' = if (!empty(teamsConnectionName)) {
-  parent: aiGateway
+resource teamsConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(teamsConnectionName)) {
+  parent: connectorGateway
   name: teamsConnectionName
   properties: {
     connectorName: 'teams'
   }
 }
 
-resource teamsConnectionAccessPolicy 'Microsoft.Web/aigateways/connections/accessPolicies@2026-03-01-preview' = if (!empty(teamsConnectionName) && !empty(functionAppPrincipalId)) {
+resource teamsConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(functionAppPrincipalId)) {
   parent: teamsConnection
   name: 'functionapp-msi'
   properties: {
@@ -43,19 +43,19 @@ resource teamsConnectionAccessPolicy 'Microsoft.Web/aigateways/connections/acces
   }
 }
 
-@description('The resource ID of the AI Gateway.')
-output resourceId string = aiGateway.id
+@description('The resource ID of the Connector Gateway.')
+output resourceId string = connectorGateway.id
 
-@description('The name of the AI Gateway.')
-output name string = aiGateway.name
+@description('The name of the Connector Gateway.')
+output name string = connectorGateway.name
 
-@description('The resource ID of the AI Gateway Connection.')
-output connectionResourceId string = !empty(connectionName) ? aiGatewayConnection.id : ''
+@description('The resource ID of the Connector Gateway Connection.')
+output connectionResourceId string = !empty(connectionName) ? connectorGatewayConnection.id : ''
 
-@description('The name of the AI Gateway Connection.')
-output connectionName string = !empty(connectionName) ? aiGatewayConnection.name : ''
+@description('The name of the Connector Gateway Connection.')
+output connectionName string = !empty(connectionName) ? connectorGatewayConnection.name : ''
 
-@description('The name of the Teams AI Gateway Connection.')
+@description('The name of the Teams Connector Gateway Connection.')
 output teamsConnectionName string = !empty(teamsConnectionName) ? teamsConnection.name : ''
 
 @description('The connection runtime URL for the Teams connection.')

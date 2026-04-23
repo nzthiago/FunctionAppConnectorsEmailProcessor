@@ -17,8 +17,8 @@ outputs=$(azd env get-values --output json)
 if command -v jq &> /dev/null; then
     subscriptionId=$(echo "$outputs" | jq -r '.AZURE_SUBSCRIPTION_ID')
     resourceGroupName=$(echo "$outputs" | jq -r '.resourceGroupName')
-    aiGatewayName=$(echo "$outputs" | jq -r '.aiGatewayName')
-    aiGatewayConnectionName=$(echo "$outputs" | jq -r '.aiGatewayConnectionName')
+    connectorGatewayName=$(echo "$outputs" | jq -r '.connectorGatewayName')
+    connectorGatewayConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayConnectionName')
     functionAppName=$(echo "$outputs" | jq -r '.functionAppName')
     functionAppDefaultHostname=$(echo "$outputs" | jq -r '.functionAppDefaultHostname')
     office365FunctionName=$(echo "$outputs" | jq -r '.office365FunctionName')
@@ -27,17 +27,17 @@ else
     exit 1
 fi
 
-# --- Create AI Gateway trigger config ---
-echo -e "${YELLOW}Creating AI Gateway trigger config...${NC}"
+# --- Create Connector Gateway trigger config ---
+echo -e "${YELLOW}Creating Connector Gateway trigger config...${NC}"
 
 # Fetch the connector extension system key
 echo -e "${CYAN}Fetching connector extension key for ${functionAppName}...${NC}"
 connectorExtensionKey=$(az functionapp keys list -g "${resourceGroupName}" -n "${functionAppName}" --query "systemKeys.connector_extension" -o tsv)
 
-triggerName="${aiGatewayConnectionName}-trigger"
+triggerName="${connectorGatewayConnectionName}-trigger"
 callbackUrl="https://${functionAppName}.azurewebsites.net/runtime/webhooks/connector?functionName=${office365FunctionName}&code=${connectorExtensionKey}"
 
-apiUrl="https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.Web/aigateways/${aiGatewayName}/triggerconfigs/${triggerName}?api-version=2026-03-01-preview"
+apiUrl="https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.Web/connectorGateways/${connectorGatewayName}/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
 
 body=$(cat <<EOF
 {
@@ -45,7 +45,7 @@ body=$(cat <<EOF
     "description": "Office 365 Outlook trigger config",
     "connectionDetails": {
       "connectorName": "office365",
-      "connectionName": "${aiGatewayConnectionName}"
+      "connectionName": "${connectorGatewayConnectionName}"
     },
     "operationName": "OnNewEmailV3",
     "parameters": [
@@ -67,7 +67,7 @@ echo -e "${CYAN}  Callback URL: ${callbackUrl}${NC}"
 
 az rest --method PUT --url "${apiUrl}" --body "${body}"
 
-echo -e "${GREEN}✅ AI Gateway trigger config created successfully!${NC}"
+echo -e "${GREEN}✅ Connector Gateway trigger config created successfully!${NC}"
 
 echo ""
 echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════╗${NC}"
@@ -78,7 +78,7 @@ echo -e "${YELLOW}║  Before testing, you must authorize both connectors:      
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  1. Open the Azure Portal: https://portal.azure.com                  ║${NC}"
 echo -e "${YELLOW}║  2. Navigate to Resource Group: ${resourceGroupName}${NC}"
-echo -e "${YELLOW}║  3. Open the AI Gateway resource: ${aiGatewayName}${NC}"
+echo -e "${YELLOW}║  3. Open the Connector Gateway resource: ${connectorGatewayName}${NC}"
 echo -e "${YELLOW}║  4. Go to Connections → authorize the Office 365 connection          ║${NC}"
 echo -e "${YELLOW}║  5. Go to Connections → authorize the Teams connection               ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"

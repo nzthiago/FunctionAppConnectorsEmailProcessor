@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -11,7 +10,22 @@ namespace Company.Function
 {
     public class ProcessEmail
     {
-        private const string TeamsPostMessagePath = "/beta/teams/conversation/message/poster/Flow%20bot/location/Channel";
+        private const string PostAsFlowBot = "Flow bot";
+        private const string PostInChannel = "Channel";
+
+        // Derived from the empty marker DynamicPostMessageRequest so the SDK serializes
+        // the runtime fields below into the dynamic-schema POST body the connector expects.
+        private sealed class PostMessageRequest : DynamicPostMessageRequest
+        {
+            public RecipientInfo Recipient { get; set; } = new();
+            public string MessageBody { get; set; } = string.Empty;
+        }
+
+        private sealed class RecipientInfo
+        {
+            public string GroupId { get; set; } = string.Empty;
+            public string ChannelId { get; set; } = string.Empty;
+        }
 
         // TODO: Replace with Azure OpenAI classification
         private static readonly HashSet<string> ImportantSenders = new(StringComparer.OrdinalIgnoreCase)
@@ -38,7 +52,7 @@ namespace Company.Function
 
         [Function("OnNewImportantEmailReceived")]
         public async Task<IActionResult> OnNewImportantEmailReceived(
-            [ConnectorTrigger()] Office365OnNewEmailV3TriggerPayload payload)
+            [ConnectorTrigger()] Office365OnNewEmailTriggerPayload payload)
         {
             var emails = payload.Body?.Value ?? [];
 
@@ -98,23 +112,22 @@ namespace Company.Function
                 $"<b>Subject:</b> {email.Subject}<br/>" +
                 $"<b>Preview:</b> {email.BodyPreview ?? "(no preview)"}";
 
-            var messagePayload = new
+            var request = new PostMessageRequest
             {
-                recipient = new
+                Recipient = new RecipientInfo
                 {
-                    groupId = _teamsTeamId,
-                    channelId = _teamsChannelId
+                    GroupId = _teamsTeamId,
+                    ChannelId = _teamsChannelId
                 },
-                messageBody
+                MessageBody = messageBody
             };
-            var messageJson = JsonSerializer.Serialize(messagePayload);
 
             try
             {
-                var result = await _teamsClient.SendRawRequestAsync<PostToConversationResponse>(
-                    HttpMethod.Post,
-                    TeamsPostMessagePath,
-                    messageJson);
+                var result = await _teamsClient.PostMessageToConversationAsync(
+                    PostAsFlowBot,
+                    PostInChannel,
+                    request);
 
                 _logger.LogInformation("Teams message posted. MessageId: {MessageId}", result?.MessageID);
             }

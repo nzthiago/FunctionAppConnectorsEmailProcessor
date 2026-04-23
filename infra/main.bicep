@@ -13,7 +13,7 @@ param environmentName string
 param location string
 
 metadata name = 'Azure Functions Connectors Demo'
-metadata description = 'Creates Azure Functions Flex Consumption and AI Gateway resources'
+metadata description = 'Creates Azure Functions Flex Consumption and Connector Gateway resources'
 
 @description('Id of the user identity to be used for testing and debugging. This is not required in production. Leave empty if not needed.')
 @metadata({
@@ -27,10 +27,10 @@ param userPrincipalId string  = deployer().objectId
 param office365FunctionName string = 'OnNewImportantEmailReceived'
 
 @description('The Teams Team ID (groupId) to post notifications to.')
-param teamsTeamId string = ''
+param teamsTeamId string
 
 @description('The Teams Channel ID to post notifications to.')
-param teamsChannelId string = ''
+param teamsChannelId string
 
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -43,9 +43,9 @@ var resourceGroupName = '${abbrs.resourcesResourceGroups}${environmentName}'
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
 var logAnalyticsName = '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
 var appInsightsName = '${abbrs.insightsComponents}${resourceToken}'
-var aiGatewayName = '${abbrs.aiGateways}${resourceToken}'
-var aiGatewayConnectionName = '${abbrs.aiGatewaysConnections}${resourceToken}'
-var aiGatewayTeamsConnectionName = '${abbrs.aiGatewaysConnections}teams-${resourceToken}'
+var connectorGatewayName = '${abbrs.connectorGateways}${resourceToken}'
+var connectorGatewayConnectionName = '${abbrs.connectorGatewaysConnections}${resourceToken}'
+var connectorGatewayTeamsConnectionName = '${abbrs.connectorGatewaysConnections}teams-${resourceToken}'
 
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, environmentName)), 7)}'
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -173,17 +173,17 @@ module functionAppPlan 'br/public:avm/res/web/serverfarm:0.7.0' = {
   }
 }
 
-// AI Gateway
-module aiGateway './aigateway.bicep' = {
+// Connector Gateway
+module connectorGateway './connectorGateway.bicep' = {
   scope: resourceGroup
-  name: aiGatewayName
+  name: connectorGatewayName
   params: {
-    name: aiGatewayName
-    location: 'brazilsouth' // AI Gateway features we need are only available in Brazil South as of now
+    name: connectorGatewayName
+    location: 'brazilsouth' // Connector Gateway features we need are only available in Brazil South as of now
     tags: tags
-    connectionName: aiGatewayConnectionName
+    connectionName: connectorGatewayConnectionName
     connectorName: 'office365'
-    teamsConnectionName: aiGatewayTeamsConnectionName
+    teamsConnectionName: connectorGatewayTeamsConnectionName
     functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
   }
 }
@@ -236,10 +236,10 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${funcUserAssignedIdentity.outputs.clientId};Authorization=AAD'
           APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.connectionString
           AZURE_CLIENT_ID: funcUserAssignedIdentity.outputs.clientId //Used by Open Telemetry managed identity
-          AI_GATEWAY_NAME: aiGateway.outputs.name
-          AI_GATEWAY_CONNECTION_NAME: aiGateway.outputs.connectionName
-          AI_GATEWAY_TEAMS_CONNECTION_NAME: aiGateway.outputs.teamsConnectionName
-          TEAMS_CONNECTION_RUNTIME_URL: aiGateway.outputs.teamsConnectionRuntimeUrl
+          CONNECTOR_GATEWAY_NAME: connectorGateway.outputs.name
+          CONNECTOR_GATEWAY_CONNECTION_NAME: connectorGateway.outputs.connectionName
+          CONNECTOR_GATEWAY_TEAMS_CONNECTION_NAME: connectorGateway.outputs.teamsConnectionName
+          TEAMS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.teamsConnectionRuntimeUrl
           TEAMS_TEAM_ID: teamsTeamId
           TEAMS_CHANNEL_ID: teamsChannelId
         }
@@ -263,20 +263,20 @@ output functionAppName string = functionApp.outputs.name
 @description('The default hostname of the created Function App.')
 output functionAppDefaultHostname string = functionApp.outputs.defaultHostname
 
-@description('The resource ID of the created AI Gateway.')
-output aiGatewayResourceId string = aiGateway.outputs.resourceId
+@description('The resource ID of the created Connector Gateway.')
+output connectorGatewayResourceId string = connectorGateway.outputs.resourceId
 
-@description('The name of the created AI Gateway.')
-output aiGatewayName string = aiGateway.outputs.name
+@description('The name of the created Connector Gateway.')
+output connectorGatewayName string = connectorGateway.outputs.name
 
-@description('The resource ID of the created AI Gateway Connection.')
-output aiGatewayConnectionResourceId string = aiGateway.outputs.connectionResourceId
+@description('The resource ID of the created Connector Gateway Connection.')
+output connectorGatewayConnectionResourceId string = connectorGateway.outputs.connectionResourceId
 
-@description('The name of the created AI Gateway Connection.')
-output aiGatewayConnectionName string = aiGateway.outputs.connectionName
+@description('The name of the created Connector Gateway Connection.')
+output connectorGatewayConnectionName string = connectorGateway.outputs.connectionName
 
-@description('The name of the created Teams AI Gateway Connection.')
-output aiGatewayTeamsConnectionName string = aiGateway.outputs.teamsConnectionName
+@description('The name of the created Teams Connector Gateway Connection.')
+output connectorGatewayTeamsConnectionName string = connectorGateway.outputs.teamsConnectionName
 
 @description('The principal ID of the Function App user-assigned managed identity.')
 output functionAppIdentityPrincipalId string = funcUserAssignedIdentity.outputs.principalId

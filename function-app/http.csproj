@@ -9,19 +9,15 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Azure.Connectors.Sdk" Version="0.5.0-preview.1" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.0.2" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.5" />
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.50.0" />
-  </ItemGroup>
-    <ItemGroup>
-    <!-- Connector Extension (local project reference) -->
-    <ProjectReference Include="..\..\azure-functions-connector-extension\src\Microsoft.Azure.Functions.Worker.Extensions.Connector\Worker.Extensions.Connector.csproj" />
-    
-    <!-- Connector SDK for typed payloads (local project reference for development) -->
-    <ProjectReference Include="..\..\azure-logicapps-connector-sdk\src\Microsoft.Azure.Workflows.Connectors.Sdk\Microsoft.Azure.Workflows.Connectors.Sdk.csproj" />
+    <PackageReference Include="Microsoft.Azure.Functions.Extensions.Connector" Version="0.1.0-alpha" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Connector" Version="0.1.0-alpha" />
   </ItemGroup>
   <ItemGroup>
     <None Update="host.json">

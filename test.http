@@ -8,7 +8,7 @@
 @functionAppUrl = {{$dotenv FUNCTION_APP_URL}}
 @httpPostCode = {{$dotenv HTTP_POST_CODE}}
 
-### Simulate AI Gateway trigger callback — important email (matches sender list)
+### Simulate Connector Gateway trigger callback — important email (matches sender list)
 POST {{functionAppUrl}}/api/OnNewImportantEmailReceived?code={{httpPostCode}}
 content-type: application/json
 
@@ -36,7 +36,7 @@ content-type: application/json
   }
 }
 
-### Simulate AI Gateway trigger callback — non-important email (should be skipped)
+### Simulate Connector Gateway trigger callback — non-important email (should be skipped)
 POST {{functionAppUrl}}/api/OnNewImportantEmailReceived?code={{httpPostCode}}
 content-type: application/json
 

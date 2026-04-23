@@ -1,6 +1,6 @@
 {
-    "aiGateways": "aigw-",
-    "aiGatewaysConnections": "aigwc-",
+    "connectorGateways": "cgw-",
+    "connectorGatewaysConnections": "cgwc-",
     "analysisServicesServers": "as",
     "apiManagementService": "apim-",
     "appConfigurationConfigurationStores": "appcs-",
