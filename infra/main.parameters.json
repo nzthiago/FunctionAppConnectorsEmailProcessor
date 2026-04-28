@@ -19,6 +19,9 @@
     },
     "teamsChannelId": {
       "value": "${TEAMS_CHANNEL_ID}"
+    },
+    "importantSenders": {
+      "value": "${IMPORTANT_SENDERS=}"
     }
   }
 }

@@ -32,6 +32,9 @@ param teamsTeamId string
 @description('The Teams Channel ID to post notifications to.')
 param teamsChannelId string
 
+@description('Optional. Comma-separated list of email addresses (mail or UPN) whose messages always count as important (e.g. your manager, skip-level, key stakeholders).')
+param importantSenders string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -46,6 +49,7 @@ var appInsightsName = '${abbrs.insightsComponents}${resourceToken}'
 var connectorGatewayName = '${abbrs.connectorGateways}${resourceToken}'
 var connectorGatewayConnectionName = '${abbrs.connectorGatewaysConnections}${resourceToken}'
 var connectorGatewayTeamsConnectionName = '${abbrs.connectorGatewaysConnections}teams-${resourceToken}'
+var connectorGatewayGraphConnectionName = '${abbrs.connectorGatewaysConnections}graph-${resourceToken}'
 
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, environmentName)), 7)}'
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -184,6 +188,7 @@ module connectorGateway './connectorGateway.bicep' = {
     connectionName: connectorGatewayConnectionName
     connectorName: 'office365'
     teamsConnectionName: connectorGatewayTeamsConnectionName
+    graphConnectionName: connectorGatewayGraphConnectionName
     functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
   }
 }
@@ -239,9 +244,12 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           CONNECTOR_GATEWAY_NAME: connectorGateway.outputs.name
           CONNECTOR_GATEWAY_CONNECTION_NAME: connectorGateway.outputs.connectionName
           CONNECTOR_GATEWAY_TEAMS_CONNECTION_NAME: connectorGateway.outputs.teamsConnectionName
+          CONNECTOR_GATEWAY_GRAPH_CONNECTION_NAME: connectorGateway.outputs.graphConnectionName
           TEAMS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.teamsConnectionRuntimeUrl
+          GRAPH_CONNECTION_RUNTIME_URL: connectorGateway.outputs.graphConnectionRuntimeUrl
           TEAMS_TEAM_ID: teamsTeamId
           TEAMS_CHANNEL_ID: teamsChannelId
+          IMPORTANT_SENDERS: importantSenders
         }
       }]
   }
@@ -277,6 +285,9 @@ output connectorGatewayConnectionName string = connectorGateway.outputs.connecti
 
 @description('The name of the created Teams Connector Gateway Connection.')
 output connectorGatewayTeamsConnectionName string = connectorGateway.outputs.teamsConnectionName
+
+@description('The name of the created Microsoft Graph (Groups & Users) Connector Gateway Connection.')
+output connectorGatewayGraphConnectionName string = connectorGateway.outputs.graphConnectionName
 
 @description('The principal ID of the Function App user-assigned managed identity.')
 output functionAppIdentityPrincipalId string = funcUserAssignedIdentity.outputs.principalId
