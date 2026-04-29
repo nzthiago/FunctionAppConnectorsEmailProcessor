@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -17,7 +16,7 @@ namespace Company.Function
     /// — whether each one is important enough to surface in the Teams triage channel.
     ///
     /// Important means ANY of:
-    ///   * Sender is in the leadership reporting structure (Entra group or allowlist)
+    ///   * Sender is in the IMPORTANT_SENDERS allowlist
     ///   * Email is flagged High importance by the sender
     ///   * Subject/body contains urgency / action-required language above threshold
     ///
@@ -163,7 +162,7 @@ namespace Company.Function
                 return unknown;
             }
 
-            var (domains, _) = ExtractDomains(response?.Value);
+            var domains = ExtractDomains(response?.Value);
             var isInternal = senderDomain is not null && domains.Contains(senderDomain);
             if (!isInternal)
             {
@@ -181,10 +180,10 @@ namespace Company.Function
             return new SenderContext(true, user.DisplayName, user.JobTitle, user.Department, groupNames);
         }
 
-        private static (HashSet<string> Domains, int TotalUsers) ExtractDomains(List<object>? users)
+        private static HashSet<string> ExtractDomains(List<object>? users)
         {
             var domains = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (users is null) return (domains, 0);
+            if (users is null) return domains;
 
             foreach (var raw in users)
             {
@@ -200,7 +199,7 @@ namespace Company.Function
                     domains.Add(address[(atIdx + 1)..]);
                 }
             }
-            return (domains, users.Count);
+            return domains;
         }
 
         private static GraphUser? FindUserByEmail(List<object>? users, string senderEmail)

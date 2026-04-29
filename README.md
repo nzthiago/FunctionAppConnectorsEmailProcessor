@@ -4,6 +4,10 @@ This sample demonstrates how to use **Azure Functions** with **Connector Gateway
 
 ## Architecture
 
+![Architecture diagram](docs/architecture.png)
+
+> Editable source: [docs/architecture.drawio](docs/architecture.drawio) (open with [draw.io](https://app.diagrams.net)).
+
 - **Azure Functions (Flex Consumption)** — A .NET 10 isolated worker function app that receives HTTP callbacks from the Connector Gateway.
 - **Connector Gateway** — Manages three connections (Office 365, Microsoft Graph, Teams) and the trigger configuration.
 - **Office 365 Outlook Connector** — Monitors the inbox. **Filtering happens server-side** via the trigger config (`folderPath: Inbox`, `importance: High`), so the function is only invoked for high-importance emails. This avoids unnecessary function executions.

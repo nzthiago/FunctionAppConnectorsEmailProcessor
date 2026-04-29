@@ -190,6 +190,7 @@ module connectorGateway './connectorGateway.bicep' = {
     teamsConnectionName: connectorGatewayTeamsConnectionName
     graphConnectionName: connectorGatewayGraphConnectionName
     functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
+    userPrincipalId: userPrincipalId
   }
 }
 
@@ -241,10 +242,6 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${funcUserAssignedIdentity.outputs.clientId};Authorization=AAD'
           APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.connectionString
           AZURE_CLIENT_ID: funcUserAssignedIdentity.outputs.clientId //Used by Open Telemetry managed identity
-          CONNECTOR_GATEWAY_NAME: connectorGateway.outputs.name
-          CONNECTOR_GATEWAY_CONNECTION_NAME: connectorGateway.outputs.connectionName
-          CONNECTOR_GATEWAY_TEAMS_CONNECTION_NAME: connectorGateway.outputs.teamsConnectionName
-          CONNECTOR_GATEWAY_GRAPH_CONNECTION_NAME: connectorGateway.outputs.graphConnectionName
           TEAMS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.teamsConnectionRuntimeUrl
           GRAPH_CONNECTION_RUNTIME_URL: connectorGateway.outputs.graphConnectionRuntimeUrl
           TEAMS_TEAM_ID: teamsTeamId
@@ -262,35 +259,17 @@ output resourceGroupResourceId string = resourceGroup.id
 @description('The name of the created Resource Group.')
 output resourceGroupName string = resourceGroup.name
 
-@description('The resource ID of the created Function App.')
-output functionAppResourceId string = functionApp.outputs.resourceId
-
 @description('The name of the created Function App.')
 output functionAppName string = functionApp.outputs.name
 
 @description('The default hostname of the created Function App.')
 output functionAppDefaultHostname string = functionApp.outputs.defaultHostname
 
-@description('The resource ID of the created Connector Gateway.')
-output connectorGatewayResourceId string = connectorGateway.outputs.resourceId
-
 @description('The name of the created Connector Gateway.')
 output connectorGatewayName string = connectorGateway.outputs.name
 
-@description('The resource ID of the created Connector Gateway Connection.')
-output connectorGatewayConnectionResourceId string = connectorGateway.outputs.connectionResourceId
-
 @description('The name of the created Connector Gateway Connection.')
 output connectorGatewayConnectionName string = connectorGateway.outputs.connectionName
-
-@description('The name of the created Teams Connector Gateway Connection.')
-output connectorGatewayTeamsConnectionName string = connectorGateway.outputs.teamsConnectionName
-
-@description('The name of the created Microsoft Graph (Groups & Users) Connector Gateway Connection.')
-output connectorGatewayGraphConnectionName string = connectorGateway.outputs.graphConnectionName
-
-@description('The principal ID of the Function App user-assigned managed identity.')
-output functionAppIdentityPrincipalId string = funcUserAssignedIdentity.outputs.principalId
 
 @description('The name of the Function that handles the Office 365 connector trigger.')
 output office365FunctionName string = office365FunctionName

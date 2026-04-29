@@ -6,6 +6,8 @@ param connectorName string = ''
 param teamsConnectionName string = ''
 param graphConnectionName string = ''
 param functionAppPrincipalId string = ''
+@description('Optional. AAD object id of a user (typically the deployer) to also grant access to the Teams and Graph connections, so the same code can be debugged locally with `az login` credentials.')
+param userPrincipalId string = ''
 param tenantId string = tenant().tenantId
 
 resource connectorGateway 'Microsoft.Web/connectorGateways@2026-05-01-preview' = {
@@ -44,6 +46,20 @@ resource teamsConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connection
   }
 }
 
+resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(userPrincipalId)) {
+  parent: teamsConnection
+  name: 'dev-user'
+  properties: {
+    principal: {
+      type: 'ActiveDirectory'
+      identity: {
+        objectId: userPrincipalId
+        tenantId: tenantId
+      }
+    }
+  }
+}
+
 resource graphConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(graphConnectionName)) {
   parent: connectorGateway
   name: graphConnectionName
@@ -60,6 +76,20 @@ resource graphConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connection
       type: 'ActiveDirectory'
       identity: {
         objectId: functionAppPrincipalId
+        tenantId: tenantId
+      }
+    }
+  }
+}
+
+resource graphConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(graphConnectionName) && !empty(userPrincipalId)) {
+  parent: graphConnection
+  name: 'dev-user'
+  properties: {
+    principal: {
+      type: 'ActiveDirectory'
+      identity: {
+        objectId: userPrincipalId
         tenantId: tenantId
       }
     }

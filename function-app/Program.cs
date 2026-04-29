@@ -1,3 +1,4 @@
+using Azure.Core;
 using Azure.Identity;
 using Company.Function;
 using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
@@ -13,22 +14,30 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        services.AddSingleton(_ =>
+        // DefaultAzureCredential works in both environments:
+        //   - In Azure: uses the user-assigned managed identity whose client id is in AZURE_CLIENT_ID.
+        //   - Locally:  falls back to the developer's `az login` / VS / VS Code credentials.
+        // (Plain ManagedIdentityCredential would try IMDS at 169.254.169.254 — fine in Azure, fails locally.)
+        var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
         {
-            var connectionRuntimeUrl = Environment.GetEnvironmentVariable("TEAMS_CONNECTION_RUNTIME_URL") ?? "";
-            var managedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID");
-            return new TeamsClient(connectionRuntimeUrl, managedIdentityClientId);
+            ManagedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
         });
 
-        services.AddSingleton(_ =>
-        {
-            var connectionRuntimeUrl = Environment.GetEnvironmentVariable("GRAPH_CONNECTION_RUNTIME_URL") ?? "";
-            var managedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID");
-            return new MsgraphgroupsanduserClient(connectionRuntimeUrl, managedIdentityClientId);
-        });
+        services.AddSingleton<TokenCredential>(credential);
+
+        services.AddSingleton(sp => new TeamsClient(
+            Environment.GetEnvironmentVariable("TEAMS_CONNECTION_RUNTIME_URL") ?? "",
+            sp.GetRequiredService<TokenCredential>(),
+            httpClient: null));
+
+        services.AddSingleton(sp => new MsgraphgroupsanduserClient(
+            Environment.GetEnvironmentVariable("GRAPH_CONNECTION_RUNTIME_URL") ?? "",
+            sp.GetRequiredService<TokenCredential>(),
+            httpClient: null));
 
         services.AddSingleton<ImportanceClassifier>();
     })
     .Build();
 
 host.Run();
+

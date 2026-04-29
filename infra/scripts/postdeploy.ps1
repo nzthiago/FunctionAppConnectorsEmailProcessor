@@ -8,7 +8,6 @@ $resourceGroupName = $outputs.resourceGroupName
 $connectorGatewayName = $outputs.connectorGatewayName
 $connectorGatewayConnectionName = $outputs.connectorGatewayConnectionName
 $functionAppName = $outputs.functionAppName
-$functionAppDefaultHostname = $outputs.functionAppDefaultHostname
 $office365FunctionName = $outputs.office365FunctionName
 
 # --- Create Connector Gateway trigger config ---
@@ -75,8 +74,5 @@ Write-Host "║     connection (used to enrich Teams notifications with sender i
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
 Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow
-Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  After authorizing Teams, set TEAMS_CONNECTION_RUNTIME_URL,           ║" -ForegroundColor Yellow
-Write-Host "║  TEAMS_TEAM_ID, and TEAMS_CHANNEL_ID in the Function App settings.   ║" -ForegroundColor Yellow
 Write-Host "╚══════════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
 Write-Host ""

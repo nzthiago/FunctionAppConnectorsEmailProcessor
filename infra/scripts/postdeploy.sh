@@ -20,7 +20,6 @@ if command -v jq &> /dev/null; then
     connectorGatewayName=$(echo "$outputs" | jq -r '.connectorGatewayName')
     connectorGatewayConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayConnectionName')
     functionAppName=$(echo "$outputs" | jq -r '.functionAppName')
-    functionAppDefaultHostname=$(echo "$outputs" | jq -r '.functionAppDefaultHostname')
     office365FunctionName=$(echo "$outputs" | jq -r '.office365FunctionName')
 else
     echo -e "${RED}Error: jq is required for this script. Please install jq.${NC}"
@@ -86,8 +85,5 @@ echo -e "${YELLOW}║     connection (used to enrich Teams notifications with se
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  The trigger will NOT fire until Office 365 connection is authorized. ║${NC}"
 echo -e "${YELLOW}║  Teams notifications require the Teams connection to be authorized.   ║${NC}"
-echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  After authorizing Teams, set TEAMS_CONNECTION_RUNTIME_URL,           ║${NC}"
-echo -e "${YELLOW}║  TEAMS_TEAM_ID, and TEAMS_CHANNEL_ID in the Function App settings.   ║${NC}"
 echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
