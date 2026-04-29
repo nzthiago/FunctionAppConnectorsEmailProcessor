@@ -1,27 +1,34 @@
 using Azure.Core;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Company.Function;
 using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
-using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+
+// DefaultAzureCredential works in both environments:
+//   - In Azure: uses the user-assigned managed identity whose client id is in AZURE_CLIENT_ID.
+//   - Locally:  falls back to the developer's `az login` / VS / VS Code credentials.
+// (Plain ManagedIdentityCredential would try IMDS at 169.254.169.254 — fine in Azure, fails locally.)
+var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+{
+    ManagedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
+});
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
     .ConfigureServices(services =>
     {
-        services.AddApplicationInsightsTelemetryWorkerService();
-        services.ConfigureFunctionsApplicationInsights();
-
-        // DefaultAzureCredential works in both environments:
-        //   - In Azure: uses the user-assigned managed identity whose client id is in AZURE_CLIENT_ID.
-        //   - Locally:  falls back to the developer's `az login` / VS / VS Code credentials.
-        // (Plain ManagedIdentityCredential would try IMDS at 169.254.169.254 — fine in Azure, fails locally.)
-        var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-        {
-            ManagedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
-        });
+        // OpenTelemetry → Azure Monitor (App Insights) for the worker process.
+        // Paired with `"telemetryMode": "OpenTelemetry"` in host.json so host + worker
+        // telemetry stays correlated. 
+        services.AddOpenTelemetry()
+            .UseFunctionsWorkerDefaults()
+            .UseAzureMonitorExporter(o => o.Credential = credential);
 
         services.AddSingleton<TokenCredential>(credential);
 
