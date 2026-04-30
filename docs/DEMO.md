@@ -17,7 +17,7 @@ A two-part walkthrough:
 - `azd up` already run and connections authorized (see [README](../README.md)).
 - [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) running (the VS Code extension's "Start Azurite" command works great).
 - `az login --tenant <your tenant>` (so `DefaultAzureCredential` can reach the Connector Gateway runtime URLs locally).
-- A populated [function-app/local.settings.json](../function-app/local.settings.json) — values come from `azd env get-values` plus the `TEAMS_CONNECTION_RUNTIME_URL` / `GRAPH_CONNECTION_RUNTIME_URL` app settings on the deployed Function App.
+- A populated [function-app/local.settings.json](../function-app/local.settings.json) — values come from `azd env get-values` plus the `TEAMS_CONNECTION_RUNTIME_URL` / `OFFICE365_CONNECTION_RUNTIME_URL` app settings on the deployed Function App.
 - The C# Dev Kit + Azure Functions VS Code extensions.
 
 ### Launch the host under the debugger
@@ -69,19 +69,20 @@ Set these breakpoints in order, then click **Send Request** above the **first** 
 
 - After the urgent run, hit **Send Request** on the **second** POST in [test.http](../test.http) (newsletter). Verdict has zero reasons → 200 OK with no Teams call. Cheap negative path; keeps Teams quiet.
 
-#### 🔴 BP 5 — Domain-based internal/external classification
-**[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — `response = await _graphClient.ListUsersAsync();`
+#### 🔴 BP 5 — Sender history via Office 365
+**[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — `var response = await _office365Client.GetEmailsAsync(...)` (inside `FetchFromFolderAsync`)
 
-- This is a **live call** to the Graph connector — proves managed-identity / `DefaultAzureCredential` is working locally.
-- Step over and inspect `response.Value` — note ~100 users (the connector op doesn't expose paging). That's why we derive **tenant domains** instead of looking the user up directly.
-- Hover `domains` after `ExtractDomains` — show the `HashSet` of verified domains.
-- `isInternal` is `true` when the sender's domain is in the set — robust even when the user isn't in the first page.
+- This is a **live call** to the Office 365 connector — proves managed-identity / `DefaultAzureCredential` is working locally.
+- Notice it's the **same connector** the trigger uses, just consumed as a client. One authorized connection, two roles: trigger source + outbound API.
+- Step out to `GetSenderHistoryAsync` and show the `Task.WhenAll` over `["Inbox", "Archive"]` — `GetEmailsAsync` is per-folder by design, so we fan out two parallel calls and merge the results. Easy to extend to `SentItems` etc. by adding to the array.
+- Step over and inspect `response.Value` — list of `GraphClientReceiveMessage`. The `from: senderEmail` arg is a **server-side filter** on the watched mailbox, so it scales to any tenant size — there's no directory enumeration involved.
+- Hover `history` after construction — show `TotalRecent` / `LastWeek` / `MostRecent`, which feed straight into the Teams card.
 
-#### 🔴 BP 6 — Best-effort enrichment
-**[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — `var groupNames = await GetTopGroupNamesAsync(user.Id);`
+#### 🔴 BP 6 — Internal/external badge (no directory call needed)
+**[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — inside `IsInternalSender(...)`
 
-- Step into. Two more Graph calls: `GetMemberGroupsAsync` then per-group `GetGroupPropertiesAsync`. Capped at `MaxGroupsToShow = 3` to bound latency and keep the card readable.
-- Failures are caught + logged at Debug — the function never throws on enrichment errors.
+- Pure config: `INTERNAL_DOMAINS` env var (comma list) is parsed once at startup into a `HashSet`. Sender domain in the set → `🟢 INTERNAL`, otherwise `🔴 EXTERNAL`.
+- Rationale to share with the audience: we deliberately avoided a directory connector here so the sample works on any tenant size without paging concerns. If the org domain list changes, it's an app-setting flip — no code change.
 
 #### 🔴 BP 7 — Teams card composition
 **[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — `var request = new PostMessageRequest { ... }`
@@ -96,15 +97,23 @@ Set these breakpoints in order, then click **Send Request** above the **first** 
 - Step over and switch to your Teams channel — the card appears in real time.
 - Inspect `result.MessageID` — strongly-typed response.
 
+#### 🔴 BP 9 — Write-back: flag the source email
+**[function-app/ProcessEmail.cs](../function-app/ProcessEmail.cs)** — inside `FlagSourceMessageAsync`, `await _office365Client.FlagAsync(...)`
+
+- This is the "connectors do things, not just read" moment. Same Office 365 connection, this time mutating mailbox state — sets the Outlook follow-up flag on the source message.
+- Step over and switch to Outlook — the original email now has a red flag, so even if the recipient misses the Teams ping they have a server-side reminder.
+- Failures are caught + logged at Warning — a flag failure never breaks the triage flow.
+
 ### Bonus: catch connector failures fast
 
-**Debug → Windows → Exception Settings** → tick `MsgraphgroupsanduserConnectorException` and `TeamsConnectorException`. If a connection isn't authorized, you'll stop right at the failure with `ex.StatusCode` visible.
+**Debug → Windows → Exception Settings** → tick `Office365ConnectorException` and `TeamsConnectorException`. If a connection isn't authorized, you'll stop right at the failure with `ex.StatusCode` visible.
 
 ### Bonus talking points to weave in
 
-- **DI in [Program.cs](../function-app/Program.cs)** — `TeamsClient`, `MsgraphgroupsanduserClient`, and `ImportanceClassifier` are all singletons; the connector clients take `(connectionRuntimeUrl, managedIdentityClientId)`.
-- **No `Microsoft.Graph` SDK** — we're using the `msgraphgroupsanduser` connector op set, not the official Graph SDK. The trade-off (no `/me/manager`, no paging) drove the domain-based design.
-- **Deterministic local repro** — the typed trigger payload means [test.http](../test.http) is enough to exercise the full pipeline; no real Outlook needed during development.
+- **DI in [Program.cs](../function-app/Program.cs)** — `TeamsClient`, `Office365Client`, and `ImportanceClassifier` are all singletons; the connector clients take `(connectionRuntimeUrl, TokenCredential)`.
+- **One Office 365 connection, three uses** — the trigger callback, the sender-history `GetEmailsAsync` lookup, and the `FlagAsync` write-back all flow through the same authorized connection. No extra OAuth dance per capability.
+- **No `Microsoft.Graph` SDK and no directory connector** — the previous version of this sample used `msgraphgroupsanduser` for sender enrichment, which only returns the first ~100 users in the tenant. We replaced that with mailbox-scoped Office 365 calls, which scale to any org.
+- **Deterministic local repro** — the typed trigger payload means [test.http](../test.http) is enough to exercise the full pipeline; no real Outlook needed during development. (The flag write-back will fail with a fake MessageId in test.http — that's expected and just logs a warning.)
 
 ---
 
@@ -125,9 +134,8 @@ Subscription
     ├── appi-<token>                  Application Insights
     └── cgw-<token>                   Connector Gateway  (lives in brazilsouth)
         ├── connections/
-        │   ├── cgwc-<token>            Office 365 Outlook
-        │   ├── cgwc-teams-<token>      Microsoft Teams
-        │   └── cgwc-graph-<token>      Microsoft Graph (Groups & Users)
+        │   ├── cgwc-<token>            Office 365 Outlook (trigger + client)
+        │   └── cgwc-teams-<token>      Microsoft Teams
         └── triggerconfigs/
             └── cgwc-<token>-trigger    Office 365 OnNewEmailV3 → callback URL
 ```
@@ -140,8 +148,8 @@ Run `azd env get-values` to grab the live names if you need them.
 
 1. **Overview** — point out it's **Flex Consumption** (`FC1`, 2 GB memory, scale-to-zero) and the system-assigned + user-assigned MI.
 2. **Settings → Environment variables** — show the relevant ones:
-   - `TEAMS_TEAM_ID`, `TEAMS_CHANNEL_ID`, `IMPORTANT_SENDERS` — same values you saw in `local.settings.json`.
-   - `TEAMS_CONNECTION_RUNTIME_URL`, `GRAPH_CONNECTION_RUNTIME_URL` — the gateway endpoints the SDK clients hit.
+   - `TEAMS_TEAM_ID`, `TEAMS_CHANNEL_ID`, `IMPORTANT_SENDERS`, `INTERNAL_DOMAINS` — same values you saw in `local.settings.json`.
+   - `TEAMS_CONNECTION_RUNTIME_URL`, `OFFICE365_CONNECTION_RUNTIME_URL` — the gateway endpoints the SDK clients hit.
    - `AZURE_CLIENT_ID` — the UAMI client id; the connector clients use it to acquire tokens.
    - `APPLICATIONINSIGHTS_AUTHENTICATION_STRING: ClientId=...;Authorization=AAD` — AAD-only telemetry, no instrumentation key in plaintext.
 3. **Settings → Identity → User assigned** — show the same UAMI; click into it to show its role assignments (Storage Blob Data Owner, Queue/Table Data Contributor on the storage account, Monitoring Metrics Publisher on App Insights).
@@ -153,12 +161,11 @@ Run `azd env get-values` to grab the live names if you need them.
 [Azure Portal → Resource Group → cgw-`<token>`].
 
 1. **Overview** — show it's a brand-new resource type (`Microsoft.Web/connectorGateways@2026-05-01-preview`) and that it lives in `brazilsouth` while the function lives in `westus2`. Cross-region by design today.
-2. **Connections** — three rows:
+2. **Connections** — two rows:
    - `cgwc-<token>` (Office 365)
    - `cgwc-teams-<token>` (Teams)
-   - `cgwc-graph-<token>` (Microsoft Graph — Groups & Users)
 
-   Click each → **Status: Connected** (you authorized them after `azd up`). Show the **Access policies** tab — the Function App's UAMI principal id is allowed to use the connection. That's how the SDK clients get to call the runtime URL with no shared secret.
+   Click each → **Status: Connected** (you authorized them after `azd up`). Show the **Access policies** tab — the Function App's UAMI principal id is allowed to use the connection. That's how the SDK clients get to call the runtime URL with no shared secret. The Office 365 connection has access policies because the function calls `GetEmailsAsync` and `FlagAsync` against it directly, in addition to receiving the trigger callback.
 3. **Trigger configurations** → `cgwc-<token>-trigger`:
    - **Operation:** `OnNewEmailV3`
    - **Parameters:** `folderPath = Inbox` (note: no `importance` filter — we evaluate every mail in code via the classifier so we can use richer signals).
@@ -208,8 +215,10 @@ Run `azd env get-values` to grab the live names if you need them.
    2. **Function App → Functions → OnNewImportantEmailReceived → Logs**: you'll see
       - `Important email accepted. Subject=... From=... Reasons=...` (for hits), or
       - `Skipping non-important email. Subject=... From=... Importance=...` (for misses).
-   3. **Teams channel**: the triage card pops in with the badge (🟢 INTERNAL / 🔴 EXTERNAL), sender role + groups, "Why flagged", subject, and preview.
-4. **Show the end-to-end correlation**: in App Insights → Transaction search, click the request → see the dependency calls out to `*.logic-df.azure-apihub.net` (Graph + Teams connection runtime URLs), with timing.
+      - For accepted emails, also `Flagged source email. MessageId=...`.
+   3. **Teams channel**: the triage card pops in with the optional INTERNAL/EXTERNAL badge, sender history, "Why flagged", subject, and preview.
+   4. **Outlook**: the source email now shows the red follow-up flag.
+4. **Show the end-to-end correlation**: in App Insights → Transaction search, click the request → see the dependency calls out to `*.logic-df.azure-apihub.net` (the Office 365 `GetEmailsAsync` + `FlagAsync` calls and the Teams `PostMessageToConversationAsync` call), with timing.
 
 ### E) Talking points for the cloud part
 

@@ -1,6 +1,6 @@
 # Azure Functions Connectors Sample
 
-This sample demonstrates how to use **Azure Functions** with **Connector Gateway connectors** to react to events from external services. It listens for **high-importance** emails arriving in an Office 365 inbox, enriches the sender with directory data from **Microsoft Graph (Groups & Users)**, and posts a formatted notification to a **Microsoft Teams** channel.
+This sample demonstrates how to use **Azure Functions** with **Connector Gateway connectors** to react to events from external services. It listens for new emails arriving in an Office 365 inbox, classifies each one with a small in-process importance heuristic, and — for the ones that pass the bar — enriches the message with **sender history** from the same mailbox, posts a formatted card to a **Microsoft Teams** channel, and **flags the source email** in Outlook so the recipient also has a server-side follow-up reminder.
 
 ## Architecture
 
@@ -9,10 +9,11 @@ This sample demonstrates how to use **Azure Functions** with **Connector Gateway
 > Editable source: [docs/architecture.drawio](docs/architecture.drawio) (open with [draw.io](https://app.diagrams.net)).
 
 - **Azure Functions (Flex Consumption)** — A .NET 10 isolated worker function app that receives HTTP callbacks from the Connector Gateway.
-- **Connector Gateway** — Manages three connections (Office 365, Microsoft Graph, Teams) and the trigger configuration.
-- **Office 365 Outlook Connector** — Monitors the inbox. **Filtering happens server-side** via the trigger config (`folderPath: Inbox`, `importance: High`), so the function is only invoked for high-importance emails. This avoids unnecessary function executions.
-- **Microsoft Graph (Groups & Users) Connector** — For each triggered email, the function looks up the sender to enrich the Teams message with display name, job title, and department.
-- **Teams Connector** — Posts the enriched notification card to a configured Teams channel.
+- **Connector Gateway** — Manages two connections (Office 365, Teams) and the Office 365 trigger configuration.
+- **Office 365 Outlook Connector** — Used in two ways:
+  - As a **trigger** — the gateway watches the Inbox (`folderPath: Inbox`) and calls the function for every new email.
+  - As a **client** inside the function — `GetEmailsAsync` to fetch sender history (last N messages from the same sender), and `FlagAsync` to set the Outlook follow-up flag on the source email when it's classified as important. Scales to any tenant size because everything is scoped to the watched mailbox — no directory enumeration required.
+- **Teams Connector** — Posts the enriched triage card to a configured Teams channel.
 
 ## Prerequisites
 
@@ -56,21 +57,20 @@ This provisions all infrastructure (Function App, Connector Gateway, Storage, Ap
 
 ### 3. Authorize the Connections
 
-> **⚠️ Important:** After deployment, you **must** authorize all three connector connections in the Azure portal before the end-to-end flow will work. Each connection is created in a disabled state and requires OAuth consent.
+> **⚠️ Important:** After deployment, you **must** authorize both connector connections in the Azure portal before the end-to-end flow will work. Each connection is created in a disabled state and requires OAuth consent.
 
 1. Open the [Azure Portal](https://portal.azure.com).
 2. Navigate to the **Resource Group** created by the deployment.
 3. Open the **Connector Gateway** resource.
-4. Go to **Connections** and authorize each of the three connections in turn:
-   - **Office 365** — sign in with the account whose inbox you want to monitor (drives the trigger).
-   - **Microsoft Graph (Groups & Users)** — sign in with an account that can read directory users (drives sender enrichment).
+4. Go to **Connections** and authorize each of the two connections in turn:
+   - **Office 365** — sign in with the account whose inbox you want to monitor (drives the trigger, sender-history lookup, and follow-up flag).
    - **Teams** — sign in with an account that can post to the target Teams channel.
 
-Until all three connections are authorized, the trigger will not fire and/or notifications will fail.
+Until both connections are authorized, the trigger will not fire and/or notifications will fail.
 
 ### 4. Test the Solution
 
-Once the connections are authorized, send a **high-importance** email to the authorized account. The Connector Gateway trigger filters by `importance: High` server-side, so only those emails invoke the function. The function will look up the sender via Microsoft Graph and post an enriched notification to the configured Teams channel.
+Once the connections are authorized, send an email to the authorized account. The function classifies it via [function-app/ImportanceClassifier.cs](function-app/ImportanceClassifier.cs); for important ones it (1) calls the Office 365 connector to get the sender's recent history across the Inbox and Archive folders, (2) posts an enriched triage card to the configured Teams channel, and (3) flags the source email in Outlook.
 
 You can also manually test the function endpoint using the [test.http](test.http) file (update the URL and function key to match your deployment).
 
@@ -79,12 +79,12 @@ You can also manually test the function endpoint using the [test.http](test.http
 | Path | Description |
 |---|---|
 | `function-app/` | Azure Functions application (.NET 10, isolated worker) |
-| `function-app/ProcessEmail.cs` | Function triggered for high-importance emails; enriches sender via Graph and posts to Teams |
-| `function-app/Program.cs` | Host builder, registers Teams and Microsoft Graph connector clients |
+| `function-app/ProcessEmail.cs` | Function triggered for every new email; classifies importance, looks up sender history via the Office 365 connector, posts to Teams, and flags the source email |
+| `function-app/Program.cs` | Host builder, registers Teams and Office 365 connector clients |
 | `infra/main.bicep` | Main Bicep template for all Azure resources |
-| `infra/connectorGateway.bicep` | Connector Gateway plus Office 365, Microsoft Graph, and Teams connection resources |
-| `infra/scripts/postdeploy.sh` | Post-deploy script (Linux/macOS) — creates the trigger config with `importance: High` filter |
-| `infra/scripts/postdeploy.ps1` | Post-deploy script (Windows) — creates the trigger config with `importance: High` filter |
+| `infra/connectorGateway.bicep` | Connector Gateway plus Office 365 and Teams connection resources |
+| `infra/scripts/postdeploy.sh` | Post-deploy script (Linux/macOS) — creates the Office 365 trigger config |
+| `infra/scripts/postdeploy.ps1` | Post-deploy script (Windows) — creates the Office 365 trigger config |
 | `azure.yaml` | Azure Developer CLI project configuration |
 | `test.http` | Sample HTTP request for manual testing |
 

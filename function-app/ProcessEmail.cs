@@ -1,11 +1,8 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
 using Microsoft.Azure.Connectors.DirectClient.Office365;
-using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
 
 namespace Company.Function
@@ -20,17 +17,21 @@ namespace Company.Function
     ///   * Email is flagged High importance by the sender
     ///   * Subject/body contains urgency / action-required language above threshold
     ///
-    /// For mails that pass the bar, we use Microsoft Graph (Groups & Users connector) to:
-    ///   * Look up the sender in Microsoft Entra ID (best-effort enrichment)
-    ///   * If internal, pull job title, department, and group memberships
-    ///   * If external, badge the Teams notification with a phishing-aware warning
-    /// The enriched payload is then posted to a Teams channel as a structured card.
+    /// For mails that pass the bar we also use the Office 365 connector — the same
+    /// connection that fires the trigger — to:
+    ///   * Pull the sender's recent message history from the watched mailbox so the
+    ///     Teams card can show "N emails in last 7d, last seen X" context.
+    ///   * Flag the source email server-side so the user has a follow-up reminder
+    ///     in Outlook even if they miss the Teams notification.
+    /// Internal/external badging is a simple lookup against an INTERNAL_DOMAINS env
+    /// var — scales to any tenant without needing a directory connector.
     /// </summary>
     public class ProcessEmail
     {
         private const string PostAsFlowBot = "Flow bot";
         private const string PostInChannel = "Channel";
-        private const int MaxGroupsToShow = 3;
+        private const int SenderHistoryDays = 7;
+        private const int SenderHistoryFetchTop = 25;
 
         // Derived from the empty marker DynamicPostMessageRequest so the SDK serializes
         // the runtime fields below into the dynamic-schema POST body the connector expects.
@@ -46,48 +47,36 @@ namespace Company.Function
             public string ChannelId { get; set; } = string.Empty;
         }
 
-        // Subset of the user fields returned by Graph ListUsers we care about.
-        private sealed class GraphUser
+        private sealed record SenderHistory(int TotalRecent, int LastWeek, DateTime? MostRecent)
         {
-            [JsonPropertyName("id")] public string? Id { get; set; }
-            [JsonPropertyName("displayName")] public string? DisplayName { get; set; }
-            [JsonPropertyName("jobTitle")] public string? JobTitle { get; set; }
-            [JsonPropertyName("department")] public string? Department { get; set; }
-            [JsonPropertyName("mail")] public string? Mail { get; set; }
-            [JsonPropertyName("userPrincipalName")] public string? UserPrincipalName { get; set; }
+            public static SenderHistory Empty { get; } = new(0, 0, null);
         }
-
-        private sealed record SenderContext(
-            bool IsInternal,
-            string? DisplayName,
-            string? JobTitle,
-            string? Department,
-            IReadOnlyList<string> GroupNames);
-
-        private static readonly JsonSerializerOptions JsonOpts = new()
-        {
-            PropertyNameCaseInsensitive = true
-        };
 
         private readonly ILogger _logger;
         private readonly TeamsClient _teamsClient;
-        private readonly MsgraphgroupsanduserClient _graphClient;
+        private readonly Office365Client _office365Client;
         private readonly ImportanceClassifier _classifier;
         private readonly string _teamsTeamId;
         private readonly string _teamsChannelId;
+        private readonly HashSet<string> _internalDomains;
 
         public ProcessEmail(
             ILoggerFactory loggerFactory,
             TeamsClient teamsClient,
-            MsgraphgroupsanduserClient graphClient,
+            Office365Client office365Client,
             ImportanceClassifier classifier)
         {
             _logger = loggerFactory.CreateLogger<ProcessEmail>();
             _teamsClient = teamsClient;
-            _graphClient = graphClient;
+            _office365Client = office365Client;
             _classifier = classifier;
             _teamsTeamId = Environment.GetEnvironmentVariable("TEAMS_TEAM_ID") ?? "";
             _teamsChannelId = Environment.GetEnvironmentVariable("TEAMS_CHANNEL_ID") ?? "";
+
+            var raw = Environment.GetEnvironmentVariable("INTERNAL_DOMAINS") ?? "";
+            _internalDomains = new HashSet<string>(
+                raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                StringComparer.OrdinalIgnoreCase);
         }
 
         [Function("OnNewImportantEmailReceived")]
@@ -117,168 +106,127 @@ namespace Company.Function
                     "Important email accepted. Subject={Subject} From={From} Reasons={Reasons}",
                     email.Subject, email.From, string.Join(" | ", verdict.Reasons));
 
-                var sender = await ResolveSenderContextAsync(email.From);
-                await PostTriageCardAsync(email, sender, verdict);
+                var history = await GetSenderHistoryAsync(email.From);
+                await PostTriageCardAsync(email, history, verdict);
+                await FlagSourceMessageAsync(email);
             }
 
             return new OkResult();
         }
 
         /// <summary>
-        /// Resolves the sender's directory context. Internal senders are augmented with
-        /// org info and group memberships; external senders return IsInternal=false so
-        /// the Teams card can flag them appropriately. Best-effort: failures degrade
-        /// gracefully to "external" rather than throwing.
+        /// Pulls the sender's recent history from the watched mailbox via
+        /// <see cref="Office365Client.GetEmailsAsync"/>, fanning out across Inbox
+        /// and Archive (the connector's GetEmails is per-folder). Scales to any
+        /// tenant size — it's a server-side filter on `from` against the connected
+        /// mailbox, not a directory call. Best-effort: failures degrade gracefully
+        /// to "no history".
         /// </summary>
-        private async Task<SenderContext> ResolveSenderContextAsync(string? senderEmail)
+        private async Task<SenderHistory> GetSenderHistoryAsync(string? senderEmail)
         {
-            var unknown = new SenderContext(false, null, null, null, Array.Empty<string>());
             if (string.IsNullOrWhiteSpace(senderEmail))
             {
-                return unknown;
+                return SenderHistory.Empty;
             }
 
-            var senderDomain = senderEmail.Contains('@')
-                ? senderEmail[(senderEmail.IndexOf('@') + 1)..]
-                : null;
+            string[] folders = ["Inbox", "Archive"];
+            var perFolderTasks = folders.Select(f => FetchFromFolderAsync(senderEmail, f));
+            var perFolderResults = await Task.WhenAll(perFolderTasks);
 
-            ListUsersResponse? response;
+            var messages = perFolderResults.SelectMany(r => r).ToList();
+            if (messages.Count == 0)
+            {
+                return SenderHistory.Empty;
+            }
+
+            var cutoff = DateTime.UtcNow.AddDays(-SenderHistoryDays);
+            var lastWeek = messages.Count(m => m.ReceivedTime is DateTime t && t >= cutoff);
+            var mostRecent = messages
+                .Select(m => m.ReceivedTime)
+                .Where(t => t.HasValue)
+                .DefaultIfEmpty()
+                .Max();
+
+            return new SenderHistory(messages.Count, lastWeek, mostRecent);
+        }
+
+        private async Task<IReadOnlyList<GraphClientReceiveMessage>> FetchFromFolderAsync(string senderEmail, string folder)
+        {
             try
             {
-                // The Graph connector's ListUsers op hits /v1.0/users with no $filter,
-                // $top, or $skiptoken — so for large tenants we only see the first page
-                // (~100 users). That makes per-user lookup unreliable. Instead we use
-                // the page to derive the tenant's verified domain set, and classify the
-                // sender as INTERNAL when their domain is one of those. Per-user
-                // enrichment (name/title/groups) is best-effort: only populated when the
-                // sender happens to be in the returned page.
-                response = await _graphClient.ListUsersAsync();
+                var response = await _office365Client.GetEmailsAsync(
+                    folder: folder,
+                    to: null,
+                    cC: null,
+                    toOrCC: null,
+                    from: senderEmail,
+                    importance: null,
+                    onlyWithAttachments: false,
+                    subjectFilter: null,
+                    fetchOnlyUnreadMessages: false,
+                    originalMailboxAddress: null,
+                    includeAttachments: false,
+                    searchQuery: null,
+                    top: SenderHistoryFetchTop,
+                    cancellationToken: default);
+
+                return (IReadOnlyList<GraphClientReceiveMessage>?)response?.Value ?? [];
             }
-            catch (MsgraphgroupsanduserConnectorException ex)
+            catch (Office365ConnectorException ex)
             {
                 _logger.LogWarning(ex,
-                    "Graph ListUsers failed (status {StatusCode}) — treating sender {Sender} as external.",
-                    ex.StatusCode, senderEmail);
-                return unknown;
-            }
-
-            var domains = ExtractDomains(response?.Value);
-            var isInternal = senderDomain is not null && domains.Contains(senderDomain);
-            if (!isInternal)
-            {
-                return unknown;
-            }
-
-            // Best-effort enrichment: only if sender is in the returned page.
-            var user = FindUserByEmail(response?.Value, senderEmail);
-            if (user is null || string.IsNullOrEmpty(user.Id))
-            {
-                return new SenderContext(true, null, null, null, Array.Empty<string>());
-            }
-
-            var groupNames = await GetTopGroupNamesAsync(user.Id);
-            return new SenderContext(true, user.DisplayName, user.JobTitle, user.Department, groupNames);
-        }
-
-        private static HashSet<string> ExtractDomains(List<object>? users)
-        {
-            var domains = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (users is null) return domains;
-
-            foreach (var raw in users)
-            {
-                var u = TryDeserializeUser(raw);
-                if (u is null) continue;
-
-                var address = !string.IsNullOrWhiteSpace(u.Mail) ? u.Mail : u.UserPrincipalName;
-                if (string.IsNullOrWhiteSpace(address)) continue;
-
-                var atIdx = address.IndexOf('@');
-                if (atIdx > 0 && atIdx < address.Length - 1)
-                {
-                    domains.Add(address[(atIdx + 1)..]);
-                }
-            }
-            return domains;
-        }
-
-        private static GraphUser? FindUserByEmail(List<object>? users, string senderEmail)
-        {
-            if (users is null) return null;
-
-            foreach (var raw in users)
-            {
-                var candidate = TryDeserializeUser(raw);
-                if (candidate is null) continue;
-
-                if (string.Equals(candidate.Mail, senderEmail, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(candidate.UserPrincipalName, senderEmail, StringComparison.OrdinalIgnoreCase))
-                {
-                    return candidate;
-                }
-            }
-            return null;
-        }
-
-        private static GraphUser? TryDeserializeUser(object raw)
-        {
-            try
-            {
-                var json = raw is JsonElement el ? el.GetRawText() : JsonSerializer.Serialize(raw);
-                return JsonSerializer.Deserialize<GraphUser>(json, JsonOpts);
-            }
-            catch
-            {
-                return null;
+                    "Office365 GetEmails failed (status {StatusCode}) for sender {Sender} in folder {Folder} — skipping that folder.",
+                    ex.StatusCode, senderEmail, folder);
+                return [];
             }
         }
 
         /// <summary>
-        /// Hydrates the user's group membership IDs into display names. We cap at
-        /// MaxGroupsToShow to keep the Teams card readable and the per-call latency
-        /// bounded (one Graph call per group resolved).
+        /// Sets the Outlook follow-up flag on the source message via the Office 365
+        /// connector. Gives the recipient a server-side reminder regardless of whether
+        /// they see the Teams card. Best-effort — flag failures don't fail the function.
         /// </summary>
-        private async Task<IReadOnlyList<string>> GetTopGroupNamesAsync(string userObjectId)
+        private async Task FlagSourceMessageAsync(GraphClientReceiveMessage email)
         {
-            List<string>? groupIds;
+            if (string.IsNullOrEmpty(email.MessageId))
+            {
+                _logger.LogDebug("No MessageId on payload; skipping flag.");
+                return;
+            }
+
             try
             {
-                var memberOf = await _graphClient.GetMemberGroupsAsync(
-                    userObjectId,
-                    new GetMemberGroupsInput { SecurityEnabledOnly = false });
-                groupIds = memberOf?.Value;
-            }
-            catch (MsgraphgroupsanduserConnectorException ex)
-            {
-                _logger.LogWarning(ex, "Graph GetMemberGroups failed for user {UserId}.", userObjectId);
-                return Array.Empty<string>();
-            }
+                await _office365Client.FlagAsync(
+                    messageId: email.MessageId,
+                    input: new UpdateEmailFlag { Flag = "flagged" },
+                    originalMailboxAddress: null,
+                    cancellationToken: default);
 
-            if (groupIds is null || groupIds.Count == 0)
-            {
-                return Array.Empty<string>();
+                _logger.LogInformation("Flagged source email. MessageId={MessageId}", email.MessageId);
             }
-
-            var names = new List<string>();
-            foreach (var groupId in groupIds.Take(MaxGroupsToShow))
+            catch (Office365ConnectorException ex)
             {
-                try
-                {
-                    var group = await _graphClient.GetGroupPropertiesAsync(groupId);
-                    if (!string.IsNullOrWhiteSpace(group?.DisplayName))
-                    {
-                        names.Add(group.DisplayName);
-                    }
-                }
-                catch (MsgraphgroupsanduserConnectorException ex)
-                {
-                    _logger.LogDebug(ex, "Could not resolve group {GroupId}.", groupId);
-                }
+                _logger.LogWarning(ex,
+                    "Failed to flag source email. MessageId={MessageId} Status={StatusCode}",
+                    email.MessageId, ex.StatusCode);
             }
-            return names;
         }
 
-        private async Task PostTriageCardAsync(GraphClientReceiveMessage email, SenderContext sender, ImportanceVerdict verdict)
+        private bool IsInternalSender(string? senderEmail)
+        {
+            if (string.IsNullOrWhiteSpace(senderEmail) || _internalDomains.Count == 0)
+            {
+                return false;
+            }
+            var atIdx = senderEmail.IndexOf('@');
+            if (atIdx <= 0 || atIdx >= senderEmail.Length - 1)
+            {
+                return false;
+            }
+            return _internalDomains.Contains(senderEmail[(atIdx + 1)..]);
+        }
+
+        private async Task PostTriageCardAsync(GraphClientReceiveMessage email, SenderHistory history, ImportanceVerdict verdict)
         {
             if (string.IsNullOrEmpty(_teamsTeamId) || string.IsNullOrEmpty(_teamsChannelId))
             {
@@ -286,21 +234,21 @@ namespace Company.Function
                 return;
             }
 
-            var badge = sender.IsInternal
-                ? "🟢 <b>INTERNAL</b>"
-                : "🔴 <b>EXTERNAL — verify identity before acting</b>";
+            var isInternal = IsInternalSender(email.From);
+            var badge = _internalDomains.Count == 0
+                ? ""
+                : isInternal
+                    ? "🟢 <b>INTERNAL</b><br/>"
+                    : "🔴 <b>EXTERNAL — verify identity before acting</b><br/>";
 
-            var senderLine = sender.IsInternal && !string.IsNullOrWhiteSpace(sender.DisplayName)
-                ? $"<b>From:</b> {sender.DisplayName} &lt;{email.From}&gt;"
-                : $"<b>From:</b> {email.From}";
-
-            var roleLine = sender.IsInternal && (!string.IsNullOrWhiteSpace(sender.JobTitle) || !string.IsNullOrWhiteSpace(sender.Department))
-                ? $"<br/><b>Role:</b> {sender.JobTitle}{(string.IsNullOrWhiteSpace(sender.Department) ? "" : $" — {sender.Department}")}"
-                : "";
-
-            var groupsLine = sender.GroupNames.Count > 0
-                ? $"<br/><b>Teams / groups:</b> {string.Join(", ", sender.GroupNames)}"
-                : "";
+            var historyLine = history.TotalRecent switch
+            {
+                0 => "<br/><b>Sender history:</b> no prior emails from this sender in Inbox or Archive",
+                _ => $"<br/><b>Sender history:</b> {history.TotalRecent} emails from this sender across Inbox + Archive " +
+                     $"({history.LastWeek} in last {SenderHistoryDays}d" +
+                     (history.MostRecent is DateTime t ? $", most recent {t:yyyy-MM-dd HH:mm} UTC" : "") +
+                     ")"
+            };
 
             var reasonsLine = verdict.Reasons.Count > 0
                 ? $"<br/><b>Why flagged:</b> {string.Join("; ", verdict.Reasons)}"
@@ -308,10 +256,11 @@ namespace Company.Function
 
             var messageBody =
                 $"<b>📧 Email triage — review required</b><br/>" +
-                $"{badge}<br/>" +
-                $"{senderLine}{roleLine}{groupsLine}{reasonsLine}<br/>" +
+                $"{badge}" +
+                $"<b>From:</b> {email.From}{historyLine}{reasonsLine}<br/>" +
                 $"<b>Subject:</b> {email.Subject}<br/>" +
-                $"<b>Preview:</b> {email.BodyPreview ?? "(no preview)"}";
+                $"<b>Preview:</b> {email.BodyPreview ?? "(no preview)"}<br/>" +
+                $"<i>(source email has been flagged in Outlook)</i>";
 
             var request = new PostMessageRequest
             {

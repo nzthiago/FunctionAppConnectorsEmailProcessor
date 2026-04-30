@@ -68,9 +68,8 @@ Write-Host "║  1. Open the Azure Portal: https://portal.azure.com             
 Write-Host "║  2. Navigate to Resource Group: $resourceGroupName" -ForegroundColor Yellow
 Write-Host "║  3. Open the Connector Gateway resource: $connectorGatewayName" -ForegroundColor Yellow
 Write-Host "║  4. Go to Connections -> authorize the Office 365 connection          ║" -ForegroundColor Yellow
+Write-Host "║     (used by both the trigger and for sender history + flag actions) ║" -ForegroundColor Yellow
 Write-Host "║  5. Go to Connections -> authorize the Teams connection               ║" -ForegroundColor Yellow
-Write-Host "║  6. Go to Connections -> authorize the MS Graph (Groups & Users)      ║" -ForegroundColor Yellow
-Write-Host "║     connection (used to enrich Teams notifications with sender info)  ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
 Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow

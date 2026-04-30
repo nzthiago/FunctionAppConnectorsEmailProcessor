@@ -35,6 +35,9 @@ param teamsChannelId string
 @description('Optional. Comma-separated list of email addresses (mail or UPN) whose messages always count as important (e.g. your manager, skip-level, key stakeholders).')
 param importantSenders string = ''
 
+@description('Optional. Comma-separated list of email domains considered "internal" for the INTERNAL/EXTERNAL badge on the Teams card (e.g. "contoso.com,contoso.onmicrosoft.com"). Leave empty to omit the badge.')
+param internalDomains string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -49,7 +52,6 @@ var appInsightsName = '${abbrs.insightsComponents}${resourceToken}'
 var connectorGatewayName = '${abbrs.connectorGateways}${resourceToken}'
 var connectorGatewayConnectionName = '${abbrs.connectorGatewaysConnections}${resourceToken}'
 var connectorGatewayTeamsConnectionName = '${abbrs.connectorGatewaysConnections}teams-${resourceToken}'
-var connectorGatewayGraphConnectionName = '${abbrs.connectorGatewaysConnections}graph-${resourceToken}'
 
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, environmentName)), 7)}'
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -188,7 +190,6 @@ module connectorGateway './connectorGateway.bicep' = {
     connectionName: connectorGatewayConnectionName
     connectorName: 'office365'
     teamsConnectionName: connectorGatewayTeamsConnectionName
-    graphConnectionName: connectorGatewayGraphConnectionName
     functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
     userPrincipalId: userPrincipalId
   }
@@ -243,10 +244,11 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.connectionString
           AZURE_CLIENT_ID: funcUserAssignedIdentity.outputs.clientId //Used by Open Telemetry managed identity
           TEAMS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.teamsConnectionRuntimeUrl
-          GRAPH_CONNECTION_RUNTIME_URL: connectorGateway.outputs.graphConnectionRuntimeUrl
+          OFFICE365_CONNECTION_RUNTIME_URL: connectorGateway.outputs.office365ConnectionRuntimeUrl
           TEAMS_TEAM_ID: teamsTeamId
           TEAMS_CHANNEL_ID: teamsChannelId
           IMPORTANT_SENDERS: importantSenders
+          INTERNAL_DOMAINS: internalDomains
         }
       }]
   }

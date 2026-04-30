@@ -2,7 +2,7 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Company.Function;
-using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
+using Microsoft.Azure.Connectors.DirectClient.Office365;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,8 +37,11 @@ var host = new HostBuilder()
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
-        services.AddSingleton(sp => new MsgraphgroupsanduserClient(
-            Environment.GetEnvironmentVariable("GRAPH_CONNECTION_RUNTIME_URL") ?? "",
+        // Office 365 client — used both for sender-history enrichment (GetEmailsAsync)
+        // and to flag the source email (FlagAsync) once we decide it's important.
+        // Same connection runtime URL the trigger uses; just consumed as a client too.
+        services.AddSingleton(sp => new Office365Client(
+            Environment.GetEnvironmentVariable("OFFICE365_CONNECTION_RUNTIME_URL") ?? "",
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
