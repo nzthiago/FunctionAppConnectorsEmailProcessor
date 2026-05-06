@@ -27,48 +27,42 @@ This sample demonstrates how to use **Azure Functions** with **Connector Gateway
 
 ## Getting Started
 
-### 1. Clone Required Repositories
-
-This project references two companion libraries via local project references (NuGet packages are not yet available). Clone all three repositories into the **same parent directory**:
+### 1. Clone This Repository
 
 ```bash
 git clone <url>/FunctionAppConnectorsEmailProcessor
-git clone <url>/azure-functions-connector-extension
-git clone <url>/azure-logicapps-connector-sdk
+cd FunctionAppConnectorsEmailProcessor
 ```
 
-Your folder structure should look like:
-
-```
-connectors/
-├── FunctionAppConnectorsEmailProcessor/
-├── azure-functions-connector-extension/
-└── azure-logicapps-connector-sdk/
-```
-
-### 2. Deploy to Azure
+### 2. Restore and Build (Optional Local Validation)
 
 ```bash
-cd FunctionAppConnectorsEmailProcessor
+cd function-app
+dotnet restore
+dotnet build
+```
+
+### 3. Deploy to Azure
+
+```bash
 azd up
 ```
 
 This provisions all infrastructure (Function App, Connector Gateway, Storage, Application Insights) and deploys the function code. After deployment, a post-deploy script automatically creates the Connector Gateway trigger configuration.
 
-### 3. Authorize the Connections
+### 4. Authorize the Connections
 
 > **⚠️ Important:** After deployment, you **must** authorize both connector connections in the Azure portal before the end-to-end flow will work. Each connection is created in a disabled state and requires OAuth consent.
 
-1. Open the [Azure Portal](https://portal.azure.com).
-2. Navigate to the **Resource Group** created by the deployment.
-3. Open the **Connector Gateway** resource.
-4. Go to **Connections** and authorize each of the two connections in turn:
+1. Open the Connector Namespaces portal.
+2. Navigate to the Connector Namespace created by the deployment.
+3. Go to **Connections** and authorize each of the two connections in turn:
    - **Office 365** — sign in with the account whose inbox you want to monitor (drives the trigger, sender-history lookup, and follow-up flag).
    - **Teams** — sign in with an account that can post to the target Teams channel.
 
 Until both connections are authorized, the trigger will not fire and/or notifications will fail.
 
-### 4. Test the Solution
+### 5. Test the Solution
 
 Once the connections are authorized, send an email to the authorized account. The function classifies it via [function-app/ImportanceClassifier.cs](function-app/ImportanceClassifier.cs); for important ones it (1) calls the Office 365 connector to get the sender's recent history across the Inbox and Archive folders, (2) posts an enriched triage card to the configured Teams channel, and (3) flags the source email in Outlook.
 
