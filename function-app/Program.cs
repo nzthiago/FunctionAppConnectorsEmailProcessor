@@ -10,6 +10,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 
+var applicationInsightsConnectionString = Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
 // DefaultAzureCredential works in both environments:
 //   - In Azure: uses the user-assigned managed identity whose client id is in AZURE_CLIENT_ID.
 //   - Locally:  falls back to the developer's `az login` / VS / VS Code credentials.
@@ -26,9 +28,17 @@ var host = new HostBuilder()
         // OpenTelemetry → Azure Monitor (App Insights) for the worker process.
         // Paired with `"telemetryMode": "OpenTelemetry"` in host.json so host + worker
         // telemetry stays correlated. 
-        services.AddOpenTelemetry()
-            .UseFunctionsWorkerDefaults()
-            .UseAzureMonitorExporter(o => o.Credential = credential);
+        var openTelemetry = services.AddOpenTelemetry()
+            .UseFunctionsWorkerDefaults();
+
+        if (!string.IsNullOrWhiteSpace(applicationInsightsConnectionString))
+        {
+            openTelemetry.UseAzureMonitorExporter(o =>
+            {
+                o.ConnectionString = applicationInsightsConnectionString;
+                o.Credential = credential;
+            });
+        }
 
         services.AddSingleton<TokenCredential>(credential);
 
