@@ -14,6 +14,9 @@ resource connectorGateway 'Microsoft.Web/connectorGateways@2026-05-01-preview' =
   name: name
   location: location
   tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
 }
 
 resource connectorGatewayConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(connectionName)) {
