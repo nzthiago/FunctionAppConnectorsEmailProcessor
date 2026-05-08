@@ -35,6 +35,9 @@ param teamsChannelId string
 @description('Optional. Comma-separated list of email addresses (mail or UPN) whose messages always count as important (e.g. your manager, skip-level, key stakeholders).')
 param importantSenders string = ''
 
+@description('Optional. Comma-separated list of email domains considered internal/in-org (e.g. "microsoft.com,contoso.com"). Senders whose domain matches will be looked up via the Office 365 Users connector for IN-ORG badging and profile enrichment. When empty, every sender is looked up.')
+param internalDomains string = ''
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -248,6 +251,7 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           TEAMS_TEAM_ID: teamsTeamId
           TEAMS_CHANNEL_ID: teamsChannelId
           IMPORTANT_SENDERS: importantSenders
+          INTERNAL_DOMAINS: internalDomains
         }
       }]
   }

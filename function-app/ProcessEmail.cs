@@ -25,10 +25,12 @@ namespace Company.Function
     ///     Teams card can show "N emails in last 7d, last seen X" context.
     ///   * Flag the source email server-side so the user has a follow-up reminder
     ///     in Outlook even if they miss the Teams notification.
-    /// Sender org/external badging uses the Office 365 Users connector to look up the
-    /// sender's M365 user profile (UserProfileAsync). A successful lookup means the
-    /// sender is in the org; a 404 / Office365usersConnectorException means external.
-    /// On success we also enrich the card with job title, department, and manager name.
+    /// Sender org/external badging uses an `INTERNAL_DOMAINS` (comma-separated) prefilter
+    /// to keep the Office 365 Users API off the hot path for clearly external mail. When
+    /// the sender's domain matches one in INTERNAL_DOMAINS, we call UserProfileAsync to
+    /// confirm + enrich the card with job title, department, and manager. When the domain
+    /// doesn't match (or the API returns 404 even for a matching domain), the sender is
+    /// treated as EXTERNAL. If INTERNAL_DOMAINS is unset, every sender is looked up.
     /// </summary>
     public class ProcessEmail
     {
@@ -77,6 +79,7 @@ namespace Company.Function
         private readonly ImportanceClassifier _classifier;
         private readonly string _teamsTeamId;
         private readonly string _teamsChannelId;
+        private readonly IReadOnlyList<string> _internalDomains;
 
         public ProcessEmail(
             ILoggerFactory loggerFactory,
@@ -92,6 +95,22 @@ namespace Company.Function
             _classifier = classifier;
             _teamsTeamId = Environment.GetEnvironmentVariable("TEAMS_TEAM_ID") ?? "";
             _teamsChannelId = Environment.GetEnvironmentVariable("TEAMS_CHANNEL_ID") ?? "";
+            _internalDomains = (Environment.GetEnvironmentVariable("INTERNAL_DOMAINS") ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(d => d.ToLowerInvariant())
+                .ToArray();
+        }
+
+        // True when no INTERNAL_DOMAINS allowlist is configured (look up every sender) or when
+        // the sender's domain matches the allowlist. False means we should skip the API call
+        // and treat the sender as external.
+        private bool ShouldLookupSender(string senderEmail)
+        {
+            if (_internalDomains.Count == 0) return true;
+            var atIdx = senderEmail.LastIndexOf('@');
+            if (atIdx < 0 || atIdx == senderEmail.Length - 1) return false;
+            var domain = senderEmail[(atIdx + 1)..].Trim().ToLowerInvariant();
+            return _internalDomains.Any(d => domain == d || domain.EndsWith("." + d));
         }
 
         [Function("OnNewImportantEmailReceived")]
@@ -246,6 +265,14 @@ namespace Company.Function
                 now - cached.cachedAt < TimeSpan.FromMinutes(SenderProfileCacheTtlMinutes))
             {
                 return (cached.profile, cached.notFound);
+            }
+
+            // Domain prefilter: if INTERNAL_DOMAINS is configured and the sender's domain
+            // is not in it, skip the API call and treat the sender as external.
+            if (!ShouldLookupSender(normalizedSender))
+            {
+                SenderProfileCache[normalizedSender] = (null, true, now);
+                return (null, true);
             }
 
             try

@@ -14,7 +14,7 @@ This sample demonstrates how to use **Azure Functions** with **Connector Gateway
   - As a **trigger** — the gateway watches the Inbox (`folderPath: Inbox`) and calls the function for every new email.
   - As a **client** inside the function — `GetEmailsAsync` to fetch sender history (last N messages from the same sender), and `FlagAsync` to set the Outlook follow-up flag on the source email when it's classified as important. Scales to any tenant size because everything is scoped to the watched mailbox — no directory enumeration required.
 - **Teams Connector** — Posts the enriched triage card to a configured Teams channel.
-- **Office 365 Users Connector** — Looks up the sender's M365 user profile (`UserProfileAsync`) to determine whether they are in the org. A successful lookup means the sender is an org user (🟢 IN-ORG badge); a 404 means external (🔴 EXTERNAL badge). When the profile is found the card is also enriched with the sender's job title, department, and manager display name (via `ManagerAsync`).
+- **Office 365 Users Connector** — Looks up the sender's M365 user profile (`UserProfileAsync`) to determine whether they are in the org. A successful lookup means the sender is an org user (🟢 IN-ORG badge); a 404 means external (🔴 EXTERNAL badge). When the profile is found the card is also enriched with the sender's job title, department, and manager display name (via `ManagerAsync`). To keep this API off the hot path for clearly external mail, configure the optional `INTERNAL_DOMAINS` setting (comma-separated, e.g. `microsoft.com,contoso.com`) — only senders whose domain matches will be looked up. Leave it empty to look up every sender.
 
 ## Prerequisites
 
