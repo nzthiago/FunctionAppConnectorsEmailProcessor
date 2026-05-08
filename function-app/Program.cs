@@ -44,7 +44,7 @@ var host = new HostBuilder()
         services.AddSingleton<TokenCredential>(credential);
 
         services.AddSingleton(sp => new TeamsClient(
-            Environment.GetEnvironmentVariable("TEAMS_CONNECTION_RUNTIME_URL") ?? "",
+            RequireSetting("TEAMS_CONNECTION_RUNTIME_URL"),
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
@@ -52,14 +52,14 @@ var host = new HostBuilder()
         // and to flag the source email (FlagAsync) once we decide it's important.
         // Same connection runtime URL the trigger uses; just consumed as a client too.
         services.AddSingleton(sp => new Office365Client(
-            Environment.GetEnvironmentVariable("OFFICE365_CONNECTION_RUNTIME_URL") ?? "",
+            RequireSetting("OFFICE365_CONNECTION_RUNTIME_URL"),
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
         // Office 365 Users client — used to look up the sender's M365 profile
         // (UserProfileAsync + ManagerAsync) for IN-ORG badging and card enrichment.
         services.AddSingleton(sp => new Office365usersClient(
-            Environment.GetEnvironmentVariable("OFFICE365USERS_CONNECTION_RUNTIME_URL") ?? "",
+            RequireSetting("OFFICE365USERS_CONNECTION_RUNTIME_URL"),
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
@@ -68,4 +68,20 @@ var host = new HostBuilder()
     .Build();
 
 host.Run();
+
+// Fail loudly at boot if a required connection URL setting is missing — otherwise
+// the connector clients silently get an empty BaseAddress and every call throws
+// the cryptic "An invalid request URI was provided" deep in the request pipeline.
+static string RequireSetting(string name)
+{
+    var value = Environment.GetEnvironmentVariable(name);
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        throw new InvalidOperationException(
+            $"Required app setting '{name}' is not set. " +
+            $"For local development add it to function-app/local.settings.json. " +
+            $"For Azure deployments it should be wired via infra/main.bicep.");
+    }
+    return value;
+}
 
