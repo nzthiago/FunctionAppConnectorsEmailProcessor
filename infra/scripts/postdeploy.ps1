@@ -8,7 +8,7 @@ $resourceGroupName = $outputs.resourceGroupName
 $connectorGatewayName = $outputs.connectorGatewayName
 $connectorGatewayConnectionName = $outputs.connectorGatewayConnectionName
 $connectorGatewayTeamsConnectionName = $outputs.connectorGatewayTeamsConnectionName
-$connectorGatewayMsgraphgroupsanduserConnectionName = $outputs.connectorGatewayMsgraphgroupsanduserConnectionName
+$connectorGatewayOffice365usersConnectionName = $outputs.connectorGatewayOffice365usersConnectionName
 $functionAppName = $outputs.functionAppName
 $office365FunctionName = $outputs.office365FunctionName
 
@@ -74,12 +74,13 @@ Write-Host "║     $connectorGatewayConnectionName" -ForegroundColor Yellow
 Write-Host "║     (used by both the trigger and for sender history + flag actions) ║" -ForegroundColor Yellow
 Write-Host "║  5. Authorize the Teams connection:                                  ║" -ForegroundColor Yellow
 Write-Host "║     $connectorGatewayTeamsConnectionName" -ForegroundColor Yellow
-Write-Host "║  6. Authorize the Microsoft Graph Groups & Users connection:         ║" -ForegroundColor Yellow
-Write-Host "║     $connectorGatewayMsgraphgroupsanduserConnectionName" -ForegroundColor Yellow
-Write-Host "║     This connection requires Microsoft Entra ID consent.             ║" -ForegroundColor Yellow
+Write-Host "║  6. Authorize the Office 365 Users connection:                       ║" -ForegroundColor Yellow
+Write-Host "║     $connectorGatewayOffice365usersConnectionName" -ForegroundColor Yellow
+Write-Host "║     Used to look up the sender's M365 profile (UserProfileAsync +    ║" -ForegroundColor Yellow
+Write-Host "║     ManagerAsync) for IN-ORG badging and card enrichment.            ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
 Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow
-Write-Host "║  IN-TEAM badging requires the Graph Groups & Users connection.        ║" -ForegroundColor Yellow
+Write-Host "║  IN-ORG badging requires the Office 365 Users connection.             ║" -ForegroundColor Yellow
 Write-Host "╚══════════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
 Write-Host ""

@@ -22,9 +22,6 @@
     },
     "importantSenders": {
       "value": "${IMPORTANT_SENDERS=}"
-    },
-    "watchedGroupId": {
-      "value": "${WATCHED_GROUP_ID=}"
     }
   }
 }

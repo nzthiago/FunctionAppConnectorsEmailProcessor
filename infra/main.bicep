@@ -35,9 +35,6 @@ param teamsChannelId string
 @description('Optional. Comma-separated list of email addresses (mail or UPN) whose messages always count as important (e.g. your manager, skip-level, key stakeholders).')
 param importantSenders string = ''
 
-@description('Optional. Microsoft Entra security group object ID used by the Microsoft Graph Groups & Users connector to badge senders as IN-TEAM. Leave empty to omit the badge.')
-param watchedGroupId string = ''
-
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -52,7 +49,7 @@ var appInsightsName = '${abbrs.insightsComponents}${resourceToken}'
 var connectorGatewayName = '${abbrs.connectorGateways}${resourceToken}'
 var connectorGatewayConnectionName = '${abbrs.connectorGatewaysConnections}${resourceToken}'
 var connectorGatewayTeamsConnectionName = '${abbrs.connectorGatewaysConnections}teams-${resourceToken}'
-var connectorGatewayMsgraphgroupsanduserConnectionName = '${abbrs.connectorGatewaysConnections}msgraph-${resourceToken}'
+var connectorGatewayOffice365usersConnectionName = '${abbrs.connectorGatewaysConnections}o365users-${resourceToken}'
 
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, environmentName)), 7)}'
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -191,7 +188,7 @@ module connectorGateway './connectorGateway.bicep' = {
     connectionName: connectorGatewayConnectionName
     connectorName: 'office365'
     teamsConnectionName: connectorGatewayTeamsConnectionName
-    msgraphgroupsanduserConnectionName: connectorGatewayMsgraphgroupsanduserConnectionName
+    office365usersConnectionName: connectorGatewayOffice365usersConnectionName
     functionAppPrincipalId: funcUserAssignedIdentity.outputs.principalId
     userPrincipalId: userPrincipalId
   }
@@ -247,11 +244,10 @@ module functionApp 'br/public:avm/res/web/site:0.22.0' = {
           AZURE_CLIENT_ID: funcUserAssignedIdentity.outputs.clientId //Used by Open Telemetry managed identity
           TEAMS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.teamsConnectionRuntimeUrl
           OFFICE365_CONNECTION_RUNTIME_URL: connectorGateway.outputs.office365ConnectionRuntimeUrl
-          MSGRAPHGROUPSANDUSER_CONNECTION_URL: connectorGateway.outputs.msgraphgroupsanduserConnectionRuntimeUrl
+          OFFICE365USERS_CONNECTION_RUNTIME_URL: connectorGateway.outputs.office365usersConnectionRuntimeUrl
           TEAMS_TEAM_ID: teamsTeamId
           TEAMS_CHANNEL_ID: teamsChannelId
           IMPORTANT_SENDERS: importantSenders
-          WATCHED_GROUP_ID: watchedGroupId
         }
       }]
   }
@@ -279,8 +275,8 @@ output connectorGatewayConnectionName string = connectorGateway.outputs.connecti
 @description('The name of the created Teams Connector Gateway Connection.')
 output connectorGatewayTeamsConnectionName string = connectorGateway.outputs.teamsConnectionName
 
-@description('The name of the created Microsoft Graph Groups & Users Connector Gateway Connection.')
-output connectorGatewayMsgraphgroupsanduserConnectionName string = connectorGateway.outputs.msgraphgroupsanduserConnectionName
+@description('The name of the created Office 365 Users Connector Gateway Connection.')
+output connectorGatewayOffice365usersConnectionName string = connectorGateway.outputs.office365usersConnectionName
 
 @description('The name of the Function that handles the Office 365 connector trigger.')
 output office365FunctionName string = office365FunctionName

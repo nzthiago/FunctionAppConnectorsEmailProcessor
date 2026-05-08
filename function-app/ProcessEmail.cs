@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
+using Microsoft.Azure.Connectors.DirectClient.Office365users;
 using Microsoft.Azure.Connectors.DirectClient.Office365;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
 using System.Collections.Concurrent;
@@ -25,8 +25,10 @@ namespace Company.Function
     ///     Teams card can show "N emails in last 7d, last seen X" context.
     ///   * Flag the source email server-side so the user has a follow-up reminder
     ///     in Outlook even if they miss the Teams notification.
-    /// In-team/external badging uses the Microsoft Graph Groups & Users connector
-    /// to check direct membership in the configured watched Entra security group.
+    /// Sender org/external badging uses the Office 365 Users connector to look up the
+    /// sender's M365 user profile (UserProfileAsync). A successful lookup means the
+    /// sender is in the org; a 404 / Office365usersConnectorException means external.
+    /// On success we also enrich the card with job title, department, and manager name.
     /// </summary>
     public class ProcessEmail
     {
@@ -34,8 +36,20 @@ namespace Company.Function
         private const string PostInChannel = "Channel";
         private const int SenderHistoryDays = 7;
         private const int SenderHistoryFetchTop = 25;
-        private const int WatchedGroupCacheTtlMinutes = 10;
-        private static readonly ConcurrentDictionary<string, (bool inGroup, DateTime cachedAt)> SenderGroupMembershipCache = new(StringComparer.OrdinalIgnoreCase);
+        private const int SenderProfileCacheTtlMinutes = 10;
+
+        // Enrichment data fetched from the Office 365 Users connector.
+        private sealed record SenderProfile(
+            string? DisplayName,
+            string? JobTitle,
+            string? Department,
+            string? ManagerDisplayName);
+
+        // Maps normalised sender email → (profile, notFound, cachedAt).
+        //   profile != null            → in-org sender, enrichment available
+        //   profile == null, notFound  → external sender (404 from UserProfileAsync)
+        //   profile == null, !notFound → transient lookup failure, badge omitted
+        private static readonly ConcurrentDictionary<string, (SenderProfile? profile, bool notFound, DateTime cachedAt)> SenderProfileCache = new(StringComparer.OrdinalIgnoreCase);
 
         // Derived from the empty marker DynamicPostMessageRequest so the SDK serializes
         // the runtime fields below into the dynamic-schema POST body the connector expects.
@@ -59,27 +73,25 @@ namespace Company.Function
         private readonly ILogger _logger;
         private readonly TeamsClient _teamsClient;
         private readonly Office365Client _office365Client;
-        private readonly MsgraphgroupsanduserClient _msGraphGroupsAndUserClient;
+        private readonly Office365usersClient _office365UsersClient;
         private readonly ImportanceClassifier _classifier;
         private readonly string _teamsTeamId;
         private readonly string _teamsChannelId;
-        private readonly string _watchedGroupId;
 
         public ProcessEmail(
             ILoggerFactory loggerFactory,
             TeamsClient teamsClient,
             Office365Client office365Client,
-            MsgraphgroupsanduserClient msGraphGroupsAndUserClient,
+            Office365usersClient office365UsersClient,
             ImportanceClassifier classifier)
         {
             _logger = loggerFactory.CreateLogger<ProcessEmail>();
             _teamsClient = teamsClient;
             _office365Client = office365Client;
-            _msGraphGroupsAndUserClient = msGraphGroupsAndUserClient;
+            _office365UsersClient = office365UsersClient;
             _classifier = classifier;
             _teamsTeamId = Environment.GetEnvironmentVariable("TEAMS_TEAM_ID") ?? "";
             _teamsChannelId = Environment.GetEnvironmentVariable("TEAMS_CHANNEL_ID") ?? "";
-            _watchedGroupId = Environment.GetEnvironmentVariable("WATCHED_GROUP_ID") ?? "";
         }
 
         [Function("OnNewImportantEmailReceived")]
@@ -215,41 +227,58 @@ namespace Company.Function
             }
         }
 
-        private async Task<bool?> IsSenderInWatchedGroupAsync(string? senderEmail)
+        /// <summary>
+        /// Looks up the sender's M365 user profile via the Office 365 Users connector.
+        /// A successful lookup means the sender is in the org — we get rich enrichment for
+        /// free (job title, department, manager). A 404 / <see cref="Office365usersConnectorException"/>
+        /// means the sender is external. Other exceptions degrade gracefully: badge is omitted.
+        /// Results are cached for 10 minutes to absorb bursty mail volume.
+        /// </summary>
+        private async Task<(SenderProfile? profile, bool notFound)> GetSenderProfileAsync(string? senderEmail)
         {
-            if (string.IsNullOrWhiteSpace(senderEmail) || string.IsNullOrWhiteSpace(_watchedGroupId))
-            {
-                return null;
-            }
+            if (string.IsNullOrWhiteSpace(senderEmail))
+                return (null, false);
 
-            var trimmedSender = senderEmail.Trim();
-            var normalizedSender = trimmedSender.ToLowerInvariant();
+            var normalizedSender = senderEmail.Trim();
             var now = DateTime.UtcNow;
 
-            if (SenderGroupMembershipCache.TryGetValue(normalizedSender, out var cached) &&
-                now - cached.cachedAt < TimeSpan.FromMinutes(WatchedGroupCacheTtlMinutes))
+            if (SenderProfileCache.TryGetValue(normalizedSender, out var cached) &&
+                now - cached.cachedAt < TimeSpan.FromMinutes(SenderProfileCacheTtlMinutes))
             {
-                return cached.inGroup;
+                return (cached.profile, cached.notFound);
             }
 
             try
             {
-                var escapedSender = trimmedSender.Replace("'", "''");
-                var response = await _msGraphGroupsAndUserClient.ListDirectGroupMembersAsync(
-                    _watchedGroupId,
-                    filterBy: $"mail eq '{escapedSender}'",
-                    cancellationToken: default);
+                var user = await _office365UsersClient.UserProfileAsync(normalizedSender);
 
-                var inGroup = (response?.Value?.Count ?? 0) > 0;
-                SenderGroupMembershipCache[normalizedSender] = (inGroup, now);
-                return inGroup;
+                // Fetch manager display name — best-effort, users with no manager return null or throw.
+                string? managerName = null;
+                try
+                {
+                    var manager = await _office365UsersClient.ManagerAsync(normalizedSender);
+                    managerName = manager?.DisplayName;
+                }
+                catch (Office365usersConnectorException)
+                {
+                    // No manager record — tolerated.
+                }
+
+                var profile = new SenderProfile(user?.DisplayName, user?.JobTitle, user?.Department, managerName);
+                SenderProfileCache[normalizedSender] = (profile, false, now);
+                return (profile, false);
             }
-            catch (MsgraphgroupsanduserConnectorException ex)
+            catch (Office365usersConnectorException ex) when (ex.StatusCode == 404)
+            {
+                SenderProfileCache[normalizedSender] = (null, true, now);
+                return (null, true);
+            }
+            catch (Office365usersConnectorException ex)
             {
                 _logger.LogWarning(ex,
-                    "Microsoft Graph Groups & Users membership lookup failed for sender {Sender}. Status={StatusCode}",
+                    "Office 365 Users profile lookup failed for sender {Sender}. Status={StatusCode}",
                     normalizedSender, ex.StatusCode);
-                return null;
+                return (null, false);
             }
         }
 
@@ -261,12 +290,21 @@ namespace Company.Function
                 return;
             }
 
-            var isSenderInWatchedGroup = await IsSenderInWatchedGroupAsync(email.From);
-            var badge = isSenderInWatchedGroup is null
-                ? ""
-                : isSenderInWatchedGroup.Value
-                    ? "🟢 <b>IN-TEAM</b><br/>"
-                    : "🔴 <b>EXTERNAL — verify identity before acting</b><br/>";
+            var (senderProfile, senderNotFound) = await GetSenderProfileAsync(email.From);
+
+            var badge = senderNotFound
+                ? "🔴 <b>EXTERNAL — verify identity before acting</b><br/>"
+                : senderProfile is not null
+                    ? "🟢 <b>IN-ORG</b><br/>"
+                    : "";
+
+            var profileLine = senderProfile is not null
+                ? $"<br/><b>Title:</b> {senderProfile.JobTitle ?? "(not set)"}" +
+                  $" | <b>Dept:</b> {senderProfile.Department ?? "(not set)"}" +
+                  (senderProfile.ManagerDisplayName is not null
+                      ? $" | <b>Manager:</b> {senderProfile.ManagerDisplayName}"
+                      : "")
+                : "";
 
             var historyLine = history.TotalRecent switch
             {
@@ -284,7 +322,7 @@ namespace Company.Function
             var messageBody =
                 $"<b>📧 Email triage — review required</b><br/>" +
                 $"{badge}" +
-                $"<b>From:</b> {email.From}{historyLine}{reasonsLine}<br/>" +
+                $"<b>From:</b> {email.From}{profileLine}{historyLine}{reasonsLine}<br/>" +
                 $"<b>Subject:</b> {email.Subject}<br/>" +
                 $"<b>Preview:</b> {email.BodyPreview ?? "(no preview)"}<br/>" +
                 $"<i>(source email has been flagged in Outlook)</i>";

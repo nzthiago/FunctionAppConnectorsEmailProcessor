@@ -4,9 +4,9 @@ param tags object = {}
 param connectionName string = ''
 param connectorName string = ''
 param teamsConnectionName string = ''
-param msgraphgroupsanduserConnectionName string = ''
+param office365usersConnectionName string = ''
 param functionAppPrincipalId string = ''
-@description('Optional. AAD object id of a user (typically the deployer) to also grant access to the Teams, Office 365, and Microsoft Graph Groups & Users connections, so the same code can be debugged locally with `az login` credentials.')
+@description('Optional. AAD object id of a user (typically the deployer) to also grant access to the Teams, Office 365, and Office 365 Users connections, so the same code can be debugged locally with `az login` credentials.')
 param userPrincipalId string = ''
 param tenantId string = tenant().tenantId
 
@@ -91,16 +91,16 @@ resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connec
   }
 }
 
-resource msgraphgroupsanduserConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName)) {
+resource office365usersConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(office365usersConnectionName)) {
   parent: connectorGateway
-  name: msgraphgroupsanduserConnectionName
+  name: office365usersConnectionName
   properties: {
-    connectorName: 'msgraphgroupsanduser'
+    connectorName: 'office365users'
   }
 }
 
-resource msgraphgroupsanduserConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName) && !empty(functionAppPrincipalId)) {
-  parent: msgraphgroupsanduserConnection
+resource office365usersConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(functionAppPrincipalId)) {
+  parent: office365usersConnection
   name: 'functionapp-msi'
   properties: {
     principal: {
@@ -113,8 +113,8 @@ resource msgraphgroupsanduserConnectionAccessPolicy 'Microsoft.Web/connectorGate
   }
 }
 
-resource msgraphgroupsanduserConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName) && !empty(userPrincipalId)) {
-  parent: msgraphgroupsanduserConnection
+resource office365usersConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(userPrincipalId)) {
+  parent: office365usersConnection
   name: 'dev-user'
   properties: {
     principal: {
@@ -148,8 +148,8 @@ output teamsConnectionName string = !empty(teamsConnectionName) ? teamsConnectio
 @description('The connection runtime URL for the Teams connection.')
 output teamsConnectionRuntimeUrl string = !empty(teamsConnectionName) ? teamsConnection.properties.connectionRuntimeUrl : ''
 
-@description('The name of the Microsoft Graph Groups & Users Connector Gateway Connection.')
-output msgraphgroupsanduserConnectionName string = !empty(msgraphgroupsanduserConnectionName) ? msgraphgroupsanduserConnection.name : ''
+@description('The name of the Office 365 Users Connector Gateway Connection.')
+output office365usersConnectionName string = !empty(office365usersConnectionName) ? office365usersConnection.name : ''
 
-@description('The connection runtime URL for the Microsoft Graph Groups & Users connection.')
-output msgraphgroupsanduserConnectionRuntimeUrl string = !empty(msgraphgroupsanduserConnectionName) ? msgraphgroupsanduserConnection.properties.connectionRuntimeUrl : ''
+@description('The connection runtime URL for the Office 365 Users connection.')
+output office365usersConnectionRuntimeUrl string = !empty(office365usersConnectionName) ? office365usersConnection.properties.connectionRuntimeUrl : ''

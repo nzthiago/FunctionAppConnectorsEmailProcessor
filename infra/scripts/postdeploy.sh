@@ -20,7 +20,7 @@ if command -v jq &> /dev/null; then
     connectorGatewayName=$(echo "$outputs" | jq -r '.connectorGatewayName')
     connectorGatewayConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayConnectionName')
     connectorGatewayTeamsConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayTeamsConnectionName')
-    connectorGatewayMsgraphgroupsanduserConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayMsgraphgroupsanduserConnectionName')
+    connectorGatewayOffice365usersConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayOffice365usersConnectionName')
     functionAppName=$(echo "$outputs" | jq -r '.functionAppName')
     office365FunctionName=$(echo "$outputs" | jq -r '.office365FunctionName')
 else
@@ -85,12 +85,13 @@ echo -e "${YELLOW}║     ${connectorGatewayConnectionName}                     
 echo -e "${YELLOW}║     (used by both the trigger and for sender history + flag actions) ║${NC}"
 echo -e "${YELLOW}║  5. Authorize the Teams connection:                                  ║${NC}"
 echo -e "${YELLOW}║     ${connectorGatewayTeamsConnectionName}                           ║${NC}"
-echo -e "${YELLOW}║  6. Authorize the Microsoft Graph Groups & Users connection:         ║${NC}"
-echo -e "${YELLOW}║     ${connectorGatewayMsgraphgroupsanduserConnectionName}            ║${NC}"
-echo -e "${YELLOW}║     This connection requires Microsoft Entra ID consent.             ║${NC}"
+echo -e "${YELLOW}║  6. Authorize the Office 365 Users connection:                       ║${NC}"
+echo -e "${YELLOW}║     ${connectorGatewayOffice365usersConnectionName}                  ║${NC}"
+echo -e "${YELLOW}║     Used to look up the sender's M365 profile (UserProfileAsync +    ║${NC}"
+echo -e "${YELLOW}║     ManagerAsync) for IN-ORG badging and card enrichment.            ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  The trigger will NOT fire until Office 365 connection is authorized. ║${NC}"
 echo -e "${YELLOW}║  Teams notifications require the Teams connection to be authorized.   ║${NC}"
-echo -e "${YELLOW}║  IN-TEAM badging requires the Graph Groups & Users connection.        ║${NC}"
+echo -e "${YELLOW}║  IN-ORG badging requires the Office 365 Users connection.             ║${NC}"
 echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""

@@ -2,8 +2,8 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Company.Function;
-using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
 using Microsoft.Azure.Connectors.DirectClient.Office365;
+using Microsoft.Azure.Connectors.DirectClient.Office365users;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,8 +56,10 @@ var host = new HostBuilder()
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
-        services.AddSingleton(sp => new MsgraphgroupsanduserClient(
-            Environment.GetEnvironmentVariable("MSGRAPHGROUPSANDUSER_CONNECTION_URL") ?? "",
+        // Office 365 Users client — used to look up the sender's M365 profile
+        // (UserProfileAsync + ManagerAsync) for IN-ORG badging and card enrichment.
+        services.AddSingleton(sp => new Office365usersClient(
+            Environment.GetEnvironmentVariable("OFFICE365USERS_CONNECTION_RUNTIME_URL") ?? "",
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
