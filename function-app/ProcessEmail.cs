@@ -119,6 +119,21 @@ namespace Company.Function
         {
             var emails = payload.Body?.Value ?? [];
 
+            _logger.LogInformation(
+                "Trigger callback received. payload={PayloadNull} body={BodyNull} valueCount={Count}",
+                payload is null,
+                payload?.Body is null,
+                emails.Count);
+
+            if (emails.Count == 0)
+            {
+                _logger.LogWarning(
+                    "Empty trigger batch — no email items to process. " +
+                    "If you sent an email and expected processing, the connector poll matched zero items " +
+                    "(common: filtered by trigger params, or already delivered in a prior poll).");
+                return new OkResult();
+            }
+
             foreach (var email in emails)
             {
                 var verdict = _classifier.Classify(
