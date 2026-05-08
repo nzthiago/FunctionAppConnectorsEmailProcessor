@@ -7,6 +7,8 @@ $subscriptionId = (az account show --query id -o tsv)
 $resourceGroupName = $outputs.resourceGroupName
 $connectorGatewayName = $outputs.connectorGatewayName
 $connectorGatewayConnectionName = $outputs.connectorGatewayConnectionName
+$connectorGatewayTeamsConnectionName = $outputs.connectorGatewayTeamsConnectionName
+$connectorGatewayMsgraphgroupsanduserConnectionName = $outputs.connectorGatewayMsgraphgroupsanduserConnectionName
 $functionAppName = $outputs.functionAppName
 $office365FunctionName = $outputs.office365FunctionName
 
@@ -59,19 +61,25 @@ Write-Host "✅ Connector Gateway trigger config created successfully!" -Foregro
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  ⚠️  IMPORTANT: Authorize the Office 365 AND Teams Connections       ║" -ForegroundColor Yellow
+Write-Host "║  ⚠️  IMPORTANT: Authorize the Connector Connections                  ║" -ForegroundColor Yellow
 Write-Host "╠══════════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  Before testing, you must authorize both connectors:                 ║" -ForegroundColor Yellow
+Write-Host "║  Before testing, you must authorize all connector connections:       ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  1. Open the Azure Portal: https://portal.azure.com                  ║" -ForegroundColor Yellow
 Write-Host "║  2. Navigate to Resource Group: $resourceGroupName" -ForegroundColor Yellow
 Write-Host "║  3. Open the Connector Gateway resource: $connectorGatewayName" -ForegroundColor Yellow
-Write-Host "║  4. Go to Connections -> authorize the Office 365 connection          ║" -ForegroundColor Yellow
+Write-Host "║  4. Go to Connections -> authorize the Office 365 connection:         ║" -ForegroundColor Yellow
+Write-Host "║     $connectorGatewayConnectionName" -ForegroundColor Yellow
 Write-Host "║     (used by both the trigger and for sender history + flag actions) ║" -ForegroundColor Yellow
-Write-Host "║  5. Go to Connections -> authorize the Teams connection               ║" -ForegroundColor Yellow
+Write-Host "║  5. Authorize the Teams connection:                                  ║" -ForegroundColor Yellow
+Write-Host "║     $connectorGatewayTeamsConnectionName" -ForegroundColor Yellow
+Write-Host "║  6. Authorize the Microsoft Graph Groups & Users connection:         ║" -ForegroundColor Yellow
+Write-Host "║     $connectorGatewayMsgraphgroupsanduserConnectionName" -ForegroundColor Yellow
+Write-Host "║     This connection requires Microsoft Entra ID consent.             ║" -ForegroundColor Yellow
 Write-Host "║                                                                      ║" -ForegroundColor Yellow
 Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
 Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow
+Write-Host "║  IN-TEAM badging requires the Graph Groups & Users connection.        ║" -ForegroundColor Yellow
 Write-Host "╚══════════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
 Write-Host ""

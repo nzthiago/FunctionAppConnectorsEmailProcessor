@@ -9,11 +9,12 @@ This sample demonstrates how to use **Azure Functions** with **Connector Gateway
 > Editable source: [docs/architecture.drawio](docs/architecture.drawio) (open with [draw.io](https://app.diagrams.net)).
 
 - **Azure Functions (Flex Consumption)** — A .NET 10 isolated worker function app that receives HTTP callbacks from the Connector Gateway.
-- **Connector Gateway** — Manages two connections (Office 365, Teams) and the Office 365 trigger configuration.
+- **Connector Gateway** — Manages three connections (Office 365, Teams, Microsoft Graph Groups & Users) and the Office 365 trigger configuration.
 - **Office 365 Outlook Connector** — Used in two ways:
   - As a **trigger** — the gateway watches the Inbox (`folderPath: Inbox`) and calls the function for every new email.
   - As a **client** inside the function — `GetEmailsAsync` to fetch sender history (last N messages from the same sender), and `FlagAsync` to set the Outlook follow-up flag on the source email when it's classified as important. Scales to any tenant size because everything is scoped to the watched mailbox — no directory enumeration required.
 - **Teams Connector** — Posts the enriched triage card to a configured Teams channel.
+- **Microsoft Graph Groups & Users Connector** — Checks whether the sender is a direct member of the configured Microsoft Entra security group for the `IN-TEAM` badge.
 
 ## Prerequisites
 
@@ -52,15 +53,25 @@ This provisions all infrastructure (Function App, Connector Gateway, Storage, Ap
 
 ### 4. Authorize the Connections
 
-> **⚠️ Important:** After deployment, you **must** authorize both connector connections in the Azure portal before the end-to-end flow will work. Each connection is created in a disabled state and requires OAuth consent.
+> **⚠️ Important:** After deployment, you **must** authorize all connector connections in the Azure portal before the end-to-end flow will work. Each connection is created in a disabled state and requires OAuth consent.
 
 1. Open the Connector Namespaces portal.
 2. Navigate to the Connector Namespace created by the deployment.
-3. Go to **Connections** and authorize each of the two connections in turn:
+3. Go to **Connections** and authorize each connection in turn:
    - **Office 365** — sign in with the account whose inbox you want to monitor (drives the trigger, sender-history lookup, and follow-up flag).
    - **Teams** — sign in with an account that can post to the target Teams channel.
+   - **Microsoft Graph Groups & Users** — consent with Microsoft Entra ID permissions so the function can check direct membership in the watched group.
 
-Until both connections are authorized, the trigger will not fire and/or notifications will fail.
+Until the connections are authorized, the trigger will not fire, notifications will fail, and/or the `IN-TEAM` badge will be omitted.
+
+## Environment Variables
+
+| Name | Description |
+|---|---|
+| `TEAMS_TEAM_ID` | Teams team/group ID where triage cards are posted. |
+| `TEAMS_CHANNEL_ID` | Teams channel ID where triage cards are posted. |
+| `IMPORTANT_SENDERS` | Optional comma-separated email allowlist whose messages always count as important. |
+| `WATCHED_GROUP_ID` | Optional Microsoft Entra security group object ID used for the `IN-TEAM` sender badge. Leave empty to omit the badge. Find it with `az ad group show --group <name> --query id -o tsv`. |
 
 ### 5. Test the Solution
 
@@ -74,9 +85,9 @@ You can also manually test the function endpoint using the [test.http](test.http
 |---|---|
 | `function-app/` | Azure Functions application (.NET 10, isolated worker) |
 | `function-app/ProcessEmail.cs` | Function triggered for every new email; classifies importance, looks up sender history via the Office 365 connector, posts to Teams, and flags the source email |
-| `function-app/Program.cs` | Host builder, registers Teams and Office 365 connector clients |
+| `function-app/Program.cs` | Host builder, registers Teams, Office 365, and Microsoft Graph Groups & Users connector clients |
 | `infra/main.bicep` | Main Bicep template for all Azure resources |
-| `infra/connectorGateway.bicep` | Connector Gateway plus Office 365 and Teams connection resources |
+| `infra/connectorGateway.bicep` | Connector Gateway plus Office 365, Teams, and Microsoft Graph Groups & Users connection resources |
 | `infra/scripts/postdeploy.sh` | Post-deploy script (Linux/macOS) — creates the Office 365 trigger config |
 | `infra/scripts/postdeploy.ps1` | Post-deploy script (Windows) — creates the Office 365 trigger config |
 | `azure.yaml` | Azure Developer CLI project configuration |

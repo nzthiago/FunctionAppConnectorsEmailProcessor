@@ -19,6 +19,8 @@ if command -v jq &> /dev/null; then
     resourceGroupName=$(echo "$outputs" | jq -r '.resourceGroupName')
     connectorGatewayName=$(echo "$outputs" | jq -r '.connectorGatewayName')
     connectorGatewayConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayConnectionName')
+    connectorGatewayTeamsConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayTeamsConnectionName')
+    connectorGatewayMsgraphgroupsanduserConnectionName=$(echo "$outputs" | jq -r '.connectorGatewayMsgraphgroupsanduserConnectionName')
     functionAppName=$(echo "$outputs" | jq -r '.functionAppName')
     office365FunctionName=$(echo "$outputs" | jq -r '.office365FunctionName')
 else
@@ -70,19 +72,25 @@ echo -e "${GREEN}✅ Connector Gateway trigger config created successfully!${NC}
 
 echo ""
 echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║  ⚠️  IMPORTANT: Authorize the Office 365 Connection                 ║${NC}"
+echo -e "${YELLOW}║  ⚠️  IMPORTANT: Authorize the Connector Connections                 ║${NC}"
 echo -e "${YELLOW}╠══════════════════════════════════════════════════════════════════════╣${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  Before testing, you must authorize both connectors:                 ║${NC}"
+echo -e "${YELLOW}║  Before testing, you must authorize all connector connections:       ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  1. Open the Azure Portal: https://portal.azure.com                  ║${NC}"
 echo -e "${YELLOW}║  2. Navigate to Resource Group: ${resourceGroupName}${NC}"
 echo -e "${YELLOW}║  3. Open the Connector Gateway resource: ${connectorGatewayName}${NC}"
-echo -e "${YELLOW}║  4. Go to Connections → authorize the Office 365 connection          ║${NC}"
+echo -e "${YELLOW}║  4. Go to Connections → authorize the Office 365 connection:         ║${NC}"
+echo -e "${YELLOW}║     ${connectorGatewayConnectionName}                                ║${NC}"
 echo -e "${YELLOW}║     (used by both the trigger and for sender history + flag actions) ║${NC}"
-echo -e "${YELLOW}║  5. Go to Connections → authorize the Teams connection               ║${NC}"
+echo -e "${YELLOW}║  5. Authorize the Teams connection:                                  ║${NC}"
+echo -e "${YELLOW}║     ${connectorGatewayTeamsConnectionName}                           ║${NC}"
+echo -e "${YELLOW}║  6. Authorize the Microsoft Graph Groups & Users connection:         ║${NC}"
+echo -e "${YELLOW}║     ${connectorGatewayMsgraphgroupsanduserConnectionName}            ║${NC}"
+echo -e "${YELLOW}║     This connection requires Microsoft Entra ID consent.             ║${NC}"
 echo -e "${YELLOW}║                                                                      ║${NC}"
 echo -e "${YELLOW}║  The trigger will NOT fire until Office 365 connection is authorized. ║${NC}"
 echo -e "${YELLOW}║  Teams notifications require the Teams connection to be authorized.   ║${NC}"
+echo -e "${YELLOW}║  IN-TEAM badging requires the Graph Groups & Users connection.        ║${NC}"
 echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""

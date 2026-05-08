@@ -4,8 +4,9 @@ param tags object = {}
 param connectionName string = ''
 param connectorName string = ''
 param teamsConnectionName string = ''
+param msgraphgroupsanduserConnectionName string = ''
 param functionAppPrincipalId string = ''
-@description('Optional. AAD object id of a user (typically the deployer) to also grant access to the Teams and Office 365 connections, so the same code can be debugged locally with `az login` credentials.')
+@description('Optional. AAD object id of a user (typically the deployer) to also grant access to the Teams, Office 365, and Microsoft Graph Groups & Users connections, so the same code can be debugged locally with `az login` credentials.')
 param userPrincipalId string = ''
 param tenantId string = tenant().tenantId
 
@@ -90,6 +91,42 @@ resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connec
   }
 }
 
+resource msgraphgroupsanduserConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName)) {
+  parent: connectorGateway
+  name: msgraphgroupsanduserConnectionName
+  properties: {
+    connectorName: 'msgraphgroupsanduser'
+  }
+}
+
+resource msgraphgroupsanduserConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName) && !empty(functionAppPrincipalId)) {
+  parent: msgraphgroupsanduserConnection
+  name: 'functionapp-msi'
+  properties: {
+    principal: {
+      type: 'ActiveDirectory'
+      identity: {
+        objectId: functionAppPrincipalId
+        tenantId: tenantId
+      }
+    }
+  }
+}
+
+resource msgraphgroupsanduserConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(msgraphgroupsanduserConnectionName) && !empty(userPrincipalId)) {
+  parent: msgraphgroupsanduserConnection
+  name: 'dev-user'
+  properties: {
+    principal: {
+      type: 'ActiveDirectory'
+      identity: {
+        objectId: userPrincipalId
+        tenantId: tenantId
+      }
+    }
+  }
+}
+
 @description('The resource ID of the Connector Gateway.')
 output resourceId string = connectorGateway.id
 
@@ -110,3 +147,9 @@ output teamsConnectionName string = !empty(teamsConnectionName) ? teamsConnectio
 
 @description('The connection runtime URL for the Teams connection.')
 output teamsConnectionRuntimeUrl string = !empty(teamsConnectionName) ? teamsConnection.properties.connectionRuntimeUrl : ''
+
+@description('The name of the Microsoft Graph Groups & Users Connector Gateway Connection.')
+output msgraphgroupsanduserConnectionName string = !empty(msgraphgroupsanduserConnectionName) ? msgraphgroupsanduserConnection.name : ''
+
+@description('The connection runtime URL for the Microsoft Graph Groups & Users connection.')
+output msgraphgroupsanduserConnectionRuntimeUrl string = !empty(msgraphgroupsanduserConnectionName) ? msgraphgroupsanduserConnection.properties.connectionRuntimeUrl : ''

@@ -23,8 +23,8 @@
     "importantSenders": {
       "value": "${IMPORTANT_SENDERS=}"
     },
-    "internalDomains": {
-      "value": "${INTERNAL_DOMAINS=}"
+    "watchedGroupId": {
+      "value": "${WATCHED_GROUP_ID=}"
     }
   }
 }

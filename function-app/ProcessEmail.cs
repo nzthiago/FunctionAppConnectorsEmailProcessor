@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
+using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
 using Microsoft.Azure.Connectors.DirectClient.Office365;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
+using System.Collections.Concurrent;
 
 namespace Company.Function
 {
@@ -23,8 +25,8 @@ namespace Company.Function
     ///     Teams card can show "N emails in last 7d, last seen X" context.
     ///   * Flag the source email server-side so the user has a follow-up reminder
     ///     in Outlook even if they miss the Teams notification.
-    /// Internal/external badging is a simple lookup against an INTERNAL_DOMAINS env
-    /// var — scales to any tenant without needing a directory connector.
+    /// In-team/external badging uses the Microsoft Graph Groups & Users connector
+    /// to check direct membership in the configured watched Entra security group.
     /// </summary>
     public class ProcessEmail
     {
@@ -32,6 +34,8 @@ namespace Company.Function
         private const string PostInChannel = "Channel";
         private const int SenderHistoryDays = 7;
         private const int SenderHistoryFetchTop = 25;
+        private const int WatchedGroupCacheTtlMinutes = 10;
+        private static readonly ConcurrentDictionary<string, (bool inGroup, DateTime cachedAt)> SenderGroupMembershipCache = new(StringComparer.OrdinalIgnoreCase);
 
         // Derived from the empty marker DynamicPostMessageRequest so the SDK serializes
         // the runtime fields below into the dynamic-schema POST body the connector expects.
@@ -55,28 +59,27 @@ namespace Company.Function
         private readonly ILogger _logger;
         private readonly TeamsClient _teamsClient;
         private readonly Office365Client _office365Client;
+        private readonly MsgraphgroupsanduserClient _msGraphGroupsAndUserClient;
         private readonly ImportanceClassifier _classifier;
         private readonly string _teamsTeamId;
         private readonly string _teamsChannelId;
-        private readonly HashSet<string> _internalDomains;
+        private readonly string _watchedGroupId;
 
         public ProcessEmail(
             ILoggerFactory loggerFactory,
             TeamsClient teamsClient,
             Office365Client office365Client,
+            MsgraphgroupsanduserClient msGraphGroupsAndUserClient,
             ImportanceClassifier classifier)
         {
             _logger = loggerFactory.CreateLogger<ProcessEmail>();
             _teamsClient = teamsClient;
             _office365Client = office365Client;
+            _msGraphGroupsAndUserClient = msGraphGroupsAndUserClient;
             _classifier = classifier;
             _teamsTeamId = Environment.GetEnvironmentVariable("TEAMS_TEAM_ID") ?? "";
             _teamsChannelId = Environment.GetEnvironmentVariable("TEAMS_CHANNEL_ID") ?? "";
-
-            var raw = Environment.GetEnvironmentVariable("INTERNAL_DOMAINS") ?? "";
-            _internalDomains = new HashSet<string>(
-                raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                StringComparer.OrdinalIgnoreCase);
+            _watchedGroupId = Environment.GetEnvironmentVariable("WATCHED_GROUP_ID") ?? "";
         }
 
         [Function("OnNewImportantEmailReceived")]
@@ -212,18 +215,42 @@ namespace Company.Function
             }
         }
 
-        private bool IsInternalSender(string? senderEmail)
+        private async Task<bool?> IsSenderInWatchedGroupAsync(string? senderEmail)
         {
-            if (string.IsNullOrWhiteSpace(senderEmail) || _internalDomains.Count == 0)
+            if (string.IsNullOrWhiteSpace(senderEmail) || string.IsNullOrWhiteSpace(_watchedGroupId))
             {
-                return false;
+                return null;
             }
-            var atIdx = senderEmail.IndexOf('@');
-            if (atIdx <= 0 || atIdx >= senderEmail.Length - 1)
+
+            var trimmedSender = senderEmail.Trim();
+            var normalizedSender = trimmedSender.ToLowerInvariant();
+            var now = DateTime.UtcNow;
+
+            if (SenderGroupMembershipCache.TryGetValue(normalizedSender, out var cached) &&
+                now - cached.cachedAt < TimeSpan.FromMinutes(WatchedGroupCacheTtlMinutes))
             {
-                return false;
+                return cached.inGroup;
             }
-            return _internalDomains.Contains(senderEmail[(atIdx + 1)..]);
+
+            try
+            {
+                var escapedSender = trimmedSender.Replace("'", "''");
+                var response = await _msGraphGroupsAndUserClient.ListDirectGroupMembersAsync(
+                    _watchedGroupId,
+                    filterBy: $"mail eq '{escapedSender}'",
+                    cancellationToken: default);
+
+                var inGroup = (response?.Value?.Count ?? 0) > 0;
+                SenderGroupMembershipCache[normalizedSender] = (inGroup, now);
+                return inGroup;
+            }
+            catch (MsgraphgroupsanduserConnectorException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Microsoft Graph Groups & Users membership lookup failed for sender {Sender}. Status={StatusCode}",
+                    normalizedSender, ex.StatusCode);
+                return null;
+            }
         }
 
         private async Task PostTriageCardAsync(GraphClientReceiveMessage email, SenderHistory history, ImportanceVerdict verdict)
@@ -234,11 +261,11 @@ namespace Company.Function
                 return;
             }
 
-            var isInternal = IsInternalSender(email.From);
-            var badge = _internalDomains.Count == 0
+            var isSenderInWatchedGroup = await IsSenderInWatchedGroupAsync(email.From);
+            var badge = isSenderInWatchedGroup is null
                 ? ""
-                : isInternal
-                    ? "🟢 <b>INTERNAL</b><br/>"
+                : isSenderInWatchedGroup.Value
+                    ? "🟢 <b>IN-TEAM</b><br/>"
                     : "🔴 <b>EXTERNAL — verify identity before acting</b><br/>";
 
             var historyLine = history.TotalRecent switch

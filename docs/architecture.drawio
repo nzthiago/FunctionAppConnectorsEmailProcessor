@@ -10,7 +10,7 @@
                 <mxCell id="lane-source" value="Senders" style="swimlane;html=1;startSize=28;fillColor=#E1F5FE;strokeColor=#01579B;fontStyle=1;fontSize=14;" parent="1" vertex="1">
                     <mxGeometry x="40" y="80" width="220" height="640" as="geometry"/>
                 </mxCell>
-                <mxCell id="sender-internal" value="👤 Internal sender&#xa;(@microsoft.com)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
+                <mxCell id="sender-internal" value="👤 Watched-group sender&#xa;(direct group member)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
                     <mxGeometry x="20" y="60" width="180" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="sender-leader" value="🎯 Leadership sender&#xa;(in IMPORTANT_SENDERS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
@@ -58,7 +58,7 @@
                 <mxCell id="fn-post" value="📤 PostTriageCardAsync&#xa;TeamsClient.PostMessageToConversation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#1B5E20;fontSize=13;fontStyle=1;" parent="1" vertex="1">
                     <mxGeometry x="906" y="630" width="400" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="teams" value="💬 Microsoft Teams&lt;br&gt;Triage Channel&lt;br&gt;&lt;br&gt;🟢 INTERNAL / 🔴 EXTERNAL badge&lt;br&gt;Sender · Sender History&lt;br&gt;Why flagged: …reasons…&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;Subject · Preview&lt;/span&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#4527A0;fontSize=13;align=center;verticalAlign=top;" parent="1" vertex="1">
+                <mxCell id="teams" value="💬 Microsoft Teams&lt;br&gt;Triage Channel&lt;br&gt;&lt;br&gt;🟢 IN-TEAM / 🔴 EXTERNAL badge&lt;br&gt;Sender · Sender History&lt;br&gt;Why flagged: …reasons…&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;Subject · Preview&lt;/span&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#4527A0;fontSize=13;align=center;verticalAlign=top;" parent="1" vertex="1">
                     <mxGeometry x="500" y="490" width="320" height="220" as="geometry"/>
                 </mxCell>
                 <mxCell id="e1" style="endArrow=classic;html=1;strokeColor=#0277BD;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="sender-internal" target="mailbox" edge="1">

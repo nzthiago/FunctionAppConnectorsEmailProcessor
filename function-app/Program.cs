@@ -2,6 +2,7 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Company.Function;
+using Microsoft.Azure.Connectors.DirectClient.Msgraphgroupsanduser;
 using Microsoft.Azure.Connectors.DirectClient.Office365;
 using Microsoft.Azure.Connectors.DirectClient.Teams;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
@@ -52,6 +53,11 @@ var host = new HostBuilder()
         // Same connection runtime URL the trigger uses; just consumed as a client too.
         services.AddSingleton(sp => new Office365Client(
             Environment.GetEnvironmentVariable("OFFICE365_CONNECTION_RUNTIME_URL") ?? "",
+            sp.GetRequiredService<TokenCredential>(),
+            httpClient: null));
+
+        services.AddSingleton(sp => new MsgraphgroupsanduserClient(
+            Environment.GetEnvironmentVariable("MSGRAPHGROUPSANDUSER_CONNECTION_URL") ?? "",
             sp.GetRequiredService<TokenCredential>(),
             httpClient: null));
 
