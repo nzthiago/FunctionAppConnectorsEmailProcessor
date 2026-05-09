@@ -267,7 +267,7 @@ namespace Company.Function
             {
                 await _office365Client.FlagAsync(
                     messageId: email.MessageId,
-                    input: new UpdateEmailFlag { Flag = "flagged" },
+                    input: new UpdateEmailFlag { Flag = new { flagStatus = "flagged" } },
                     originalMailboxAddress: null,
                     cancellationToken: default);
 
