@@ -113,75 +113,72 @@ namespace Company.Function
             return _internalDomains.Any(d => domain == d || domain.EndsWith("." + d));
         }
 
+        // Wire envelope for single-item triggers like Office 365 OnNewEmailV3:
+        //   {"body": <GraphClientReceiveMessage>}
+        // (Distinct from the SDK's TriggerCallbackPayload<T> which is {"body":{"value":[...]}}
+        // and is intended for batch-shaped triggers.)
+        private sealed class SingleEmailEnvelope
+        {
+            [System.Text.Json.Serialization.JsonPropertyName("body")]
+            public GraphClientReceiveMessage? Body { get; set; }
+        }
+
         [Function("OnNewImportantEmailReceived")]
         public async Task<IActionResult> OnNewImportantEmailReceived(
             [ConnectorTrigger()] string rawBody)
         {
-            // Capture the raw wire payload first so we can see *exactly* what the
-            // gateway sent (length, JSON shape) regardless of whether the typed
-            // deserializer binds it correctly. Once we know the wire shape this
-            // can switch back to typed POCO binding.
             _logger.LogInformation(
-                "Trigger callback received. rawLength={Len} rawBody={Body}",
-                rawBody?.Length ?? -1,
-                rawBody ?? "<null>");
+                "Trigger callback received. rawLength={Len}",
+                rawBody?.Length ?? -1);
 
-            Office365OnNewEmailTriggerPayload? payload = null;
-            try
+            if (string.IsNullOrEmpty(rawBody))
             {
-                if (!string.IsNullOrEmpty(rawBody))
-                {
-                    payload = System.Text.Json.JsonSerializer.Deserialize<Office365OnNewEmailTriggerPayload>(
-                        rawBody,
-                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                }
-            }
-            catch (System.Text.Json.JsonException jex)
-            {
-                _logger.LogError(jex, "Failed to deserialize trigger body into Office365OnNewEmailTriggerPayload");
-            }
-
-            var emails = payload?.Body?.Value ?? [];
-            _logger.LogInformation(
-                "Deserialized payload. body={BodyNull} valueCount={Count}",
-                payload?.Body is null,
-                emails.Count);
-
-            if (emails.Count == 0)
-            {
-                _logger.LogWarning(
-                    "Empty trigger batch — no email items to process. " +
-                    "If you sent an email and expected processing, check the rawBody log line above " +
-                    "for the actual wire shape — it may be a heartbeat, single-item (not array) shape, " +
-                    "or wrapped differently than the SDK envelope expects.");
+                _logger.LogWarning("Empty trigger body — nothing to process.");
                 return new OkResult();
             }
 
-            foreach (var email in emails)
+            SingleEmailEnvelope? envelope;
+            try
             {
-                var verdict = _classifier.Classify(
-                    email.From,
-                    email.Subject,
-                    email.Body,
-                    email.BodyPreview,
-                    email.Importance);
-
-                if (!verdict.IsImportant)
-                {
-                    _logger.LogInformation(
-                        "Skipping non-important email. Subject={Subject} From={From} Importance={Importance}",
-                        email.Subject, email.From, email.Importance);
-                    continue;
-                }
-
-                _logger.LogInformation(
-                    "Important email accepted. Subject={Subject} From={From} Reasons={Reasons}",
-                    email.Subject, email.From, string.Join(" | ", verdict.Reasons));
-
-                var history = await GetSenderHistoryAsync(email.From);
-                await PostTriageCardAsync(email, history, verdict);
-                await FlagSourceMessageAsync(email);
+                envelope = System.Text.Json.JsonSerializer.Deserialize<SingleEmailEnvelope>(
+                    rawBody,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
+            catch (System.Text.Json.JsonException jex)
+            {
+                _logger.LogError(jex, "Failed to deserialize trigger body as SingleEmailEnvelope. rawBody={Body}", rawBody);
+                return new OkResult();
+            }
+
+            var email = envelope?.Body;
+            if (email is null)
+            {
+                _logger.LogWarning("Trigger body deserialized to null email. rawBody={Body}", rawBody);
+                return new OkResult();
+            }
+
+            var verdict = _classifier.Classify(
+                email.From,
+                email.Subject,
+                email.Body,
+                email.BodyPreview,
+                email.Importance);
+
+            if (!verdict.IsImportant)
+            {
+                _logger.LogInformation(
+                    "Skipping non-important email. Subject={Subject} From={From} Importance={Importance}",
+                    email.Subject, email.From, email.Importance);
+                return new OkResult();
+            }
+
+            _logger.LogInformation(
+                "Important email accepted. Subject={Subject} From={From} Reasons={Reasons}",
+                email.Subject, email.From, string.Join(" | ", verdict.Reasons));
+
+            var history = await GetSenderHistoryAsync(email.From);
+            await PostTriageCardAsync(email, history, verdict);
+            await FlagSourceMessageAsync(email);
 
             return new OkResult();
         }
