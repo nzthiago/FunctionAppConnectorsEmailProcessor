@@ -115,13 +115,35 @@ namespace Company.Function
 
         [Function("OnNewImportantEmailReceived")]
         public async Task<IActionResult> OnNewImportantEmailReceived(
-            [ConnectorTrigger()] Office365OnNewEmailTriggerPayload payload)
+            [ConnectorTrigger()] string rawBody)
         {
-            var emails = payload.Body?.Value ?? [];
-
+            // Capture the raw wire payload first so we can see *exactly* what the
+            // gateway sent (length, JSON shape) regardless of whether the typed
+            // deserializer binds it correctly. Once we know the wire shape this
+            // can switch back to typed POCO binding.
             _logger.LogInformation(
-                "Trigger callback received. payload={PayloadNull} body={BodyNull} valueCount={Count}",
-                payload is null,
+                "Trigger callback received. rawLength={Len} rawBody={Body}",
+                rawBody?.Length ?? -1,
+                rawBody ?? "<null>");
+
+            Office365OnNewEmailTriggerPayload? payload = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(rawBody))
+                {
+                    payload = System.Text.Json.JsonSerializer.Deserialize<Office365OnNewEmailTriggerPayload>(
+                        rawBody,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+            }
+            catch (System.Text.Json.JsonException jex)
+            {
+                _logger.LogError(jex, "Failed to deserialize trigger body into Office365OnNewEmailTriggerPayload");
+            }
+
+            var emails = payload?.Body?.Value ?? [];
+            _logger.LogInformation(
+                "Deserialized payload. body={BodyNull} valueCount={Count}",
                 payload?.Body is null,
                 emails.Count);
 
@@ -129,8 +151,9 @@ namespace Company.Function
             {
                 _logger.LogWarning(
                     "Empty trigger batch — no email items to process. " +
-                    "If you sent an email and expected processing, the connector poll matched zero items " +
-                    "(common: filtered by trigger params, or already delivered in a prior poll).");
+                    "If you sent an email and expected processing, check the rawBody log line above " +
+                    "for the actual wire shape — it may be a heartbeat, single-item (not array) shape, " +
+                    "or wrapped differently than the SDK envelope expects.");
                 return new OkResult();
             }
 
