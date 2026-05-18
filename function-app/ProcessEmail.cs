@@ -2,10 +2,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Microsoft.Azure.Connectors.DirectClient.Office365users;
-using Microsoft.Azure.Connectors.DirectClient.Office365;
-using Microsoft.Azure.Connectors.DirectClient.Teams;
+using Azure.Connectors.Sdk.Office365;
+using Azure.Connectors.Sdk.Office365Users;
+using Azure.Connectors.Sdk.Teams;
 using System.Collections.Concurrent;
+using Azure.Connectors.Sdk.Office365.Models;
+using Azure.Connectors.Sdk.Teams.Models;
+using Azure.Connectors.Sdk;
 
 namespace Company.Function
 {
@@ -75,7 +78,7 @@ namespace Company.Function
         private readonly ILogger _logger;
         private readonly TeamsClient _teamsClient;
         private readonly Office365Client _office365Client;
-        private readonly Office365usersClient _office365UsersClient;
+        private readonly Office365UsersClient _office365UsersClient;
         private readonly ImportanceClassifier _classifier;
         private readonly string _teamsTeamId;
         private readonly string _teamsChannelId;
@@ -85,7 +88,7 @@ namespace Company.Function
             ILoggerFactory loggerFactory,
             TeamsClient teamsClient,
             Office365Client office365Client,
-            Office365usersClient office365UsersClient,
+            Office365UsersClient office365UsersClient,
             ImportanceClassifier classifier)
         {
             _logger = loggerFactory.CreateLogger<ProcessEmail>();
@@ -113,72 +116,48 @@ namespace Company.Function
             return _internalDomains.Any(d => domain == d || domain.EndsWith("." + d));
         }
 
-        // Wire envelope for single-item triggers like Office 365 OnNewEmailV3:
-        //   {"body": <GraphClientReceiveMessage>}
-        // (Distinct from the SDK's TriggerCallbackPayload<T> which is {"body":{"value":[...]}}
-        // and is intended for batch-shaped triggers.)
-        private sealed class SingleEmailEnvelope
-        {
-            [System.Text.Json.Serialization.JsonPropertyName("body")]
-            public GraphClientReceiveMessage? Body { get; set; }
-        }
-
         [Function("OnNewImportantEmailReceived")]
         public async Task<IActionResult> OnNewImportantEmailReceived(
-            [ConnectorTrigger()] string rawBody)
+            [ConnectorTrigger()] Office365OnNewEmailTriggerPayload payload)
         {
+            var emails = payload?.Body?.Value;
             _logger.LogInformation(
-                "Trigger callback received. rawLength={Len}",
-                rawBody?.Length ?? -1);
+                "Trigger callback received. emailCount={Count}",
+                emails?.Count ?? -1);
 
-            if (string.IsNullOrEmpty(rawBody))
+            if (emails is null || emails.Count == 0)
             {
-                _logger.LogWarning("Empty trigger body — nothing to process.");
+                _logger.LogWarning("Empty trigger payload — nothing to process.");
                 return new OkResult();
             }
 
-            SingleEmailEnvelope? envelope;
-            try
+            foreach (var email in emails)
             {
-                envelope = System.Text.Json.JsonSerializer.Deserialize<SingleEmailEnvelope>(
-                    rawBody,
-                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch (System.Text.Json.JsonException jex)
-            {
-                _logger.LogError(jex, "Failed to deserialize trigger body as SingleEmailEnvelope. rawBody={Body}", rawBody);
-                return new OkResult();
-            }
+                if (email is null) continue;
 
-            var email = envelope?.Body;
-            if (email is null)
-            {
-                _logger.LogWarning("Trigger body deserialized to null email. rawBody={Body}", rawBody);
-                return new OkResult();
-            }
+                var verdict = _classifier.Classify(
+                    email.From,
+                    email.Subject,
+                    email.Body,
+                    email.BodyPreview,
+                    email.Importance);
 
-            var verdict = _classifier.Classify(
-                email.From,
-                email.Subject,
-                email.Body,
-                email.BodyPreview,
-                email.Importance);
+                if (!verdict.IsImportant)
+                {
+                    _logger.LogInformation(
+                        "Skipping non-important email. Subject={Subject} From={From} Importance={Importance}",
+                        email.Subject, email.From, email.Importance);
+                    continue;
+                }
 
-            if (!verdict.IsImportant)
-            {
                 _logger.LogInformation(
-                    "Skipping non-important email. Subject={Subject} From={From} Importance={Importance}",
-                    email.Subject, email.From, email.Importance);
-                return new OkResult();
+                    "Important email accepted. Subject={Subject} From={From} Reasons={Reasons}",
+                    email.Subject, email.From, string.Join(" | ", verdict.Reasons));
+
+                var history = await GetSenderHistoryAsync(email.From);
+                await PostTriageCardAsync(email, history, verdict);
+                await FlagSourceMessageAsync(email);
             }
-
-            _logger.LogInformation(
-                "Important email accepted. Subject={Subject} From={From} Reasons={Reasons}",
-                email.Subject, email.From, string.Join(" | ", verdict.Reasons));
-
-            var history = await GetSenderHistoryAsync(email.From);
-            await PostTriageCardAsync(email, history, verdict);
-            await FlagSourceMessageAsync(email);
 
             return new OkResult();
         }
@@ -241,11 +220,11 @@ namespace Company.Function
 
                 return (IReadOnlyList<GraphClientReceiveMessage>?)response?.Value ?? [];
             }
-            catch (Office365ConnectorException ex)
+            catch (ConnectorException ex)
             {
                 _logger.LogWarning(ex,
-                    "Office365 GetEmails failed (status {StatusCode}) for sender {Sender} in folder {Folder} — skipping that folder.",
-                    ex.StatusCode, senderEmail, folder);
+                    "Office365 GetEmails failed for sender {Sender} in folder {Folder}. ConnectorName={ConnectorName}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage} — skipping that folder.",
+                    senderEmail, folder, ex.ConnectorName, ex.ErrorCode, ex.Message);
                 return [];
             }
         }
@@ -273,18 +252,18 @@ namespace Company.Function
 
                 _logger.LogInformation("Flagged source email. MessageId={MessageId}", email.MessageId);
             }
-            catch (Office365ConnectorException ex)
+            catch (ConnectorException ex)
             {
                 _logger.LogWarning(ex,
-                    "Failed to flag source email. MessageId={MessageId} Status={StatusCode}",
-                    email.MessageId, ex.StatusCode);
+                    "Failed to flag source email. MessageId={MessageId}. ConnectorName={ConnectorName}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}",
+                    email.MessageId, ex.ConnectorName, ex.ErrorCode, ex.Message);
             }
         }
 
         /// <summary>
         /// Looks up the sender's M365 user profile via the Office 365 Users connector.
         /// A successful lookup means the sender is in the org — we get rich enrichment for
-        /// free (job title, department, manager). A 404 / <see cref="Office365usersConnectorException"/>
+        /// free (job title, department, manager). A 404 / <see cref="ConnectorException"/> with StatusCode 404
         /// means the sender is external. Other exceptions degrade gracefully: badge is omitted.
         /// Results are cached for 10 minutes to absorb bursty mail volume.
         /// </summary>
@@ -321,7 +300,7 @@ namespace Company.Function
                     var manager = await _office365UsersClient.ManagerAsync(normalizedSender);
                     managerName = manager?.DisplayName;
                 }
-                catch (Office365usersConnectorException)
+                catch (ConnectorException)
                 {
                     // No manager record — tolerated.
                 }
@@ -330,16 +309,11 @@ namespace Company.Function
                 SenderProfileCache[normalizedSender] = (profile, false, now);
                 return (profile, false);
             }
-            catch (Office365usersConnectorException ex) when (ex.StatusCode == 404)
-            {
-                SenderProfileCache[normalizedSender] = (null, true, now);
-                return (null, true);
-            }
-            catch (Office365usersConnectorException ex)
+            catch (ConnectorException ex)
             {
                 _logger.LogWarning(ex,
-                    "Office 365 Users profile lookup failed for sender {Sender}. Status={StatusCode}",
-                    normalizedSender, ex.StatusCode);
+                    "Office 365 Users profile lookup failed for sender {Sender}. ConnectorName={ConnectorName}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}", 
+                    normalizedSender, ex.ConnectorName, ex.ErrorCode, ex.Message);
                 return (null, false);
             }
         }
@@ -406,11 +380,11 @@ namespace Company.Function
                     PostInChannel,
                     request);
 
-                _logger.LogInformation("Triage card posted to Teams. MessageId={MessageId}", result?.MessageID);
+                _logger.LogInformation("Triage card posted to Teams. MessageId={MessageId}", result?.MessageId);
             }
-            catch (TeamsConnectorException ex)
+            catch (ConnectorException ex)
             {
-                _logger.LogError(ex, "Failed to post Teams message. Status={StatusCode}", ex.StatusCode);
+                _logger.LogError(ex, "Failed to post Teams message. ConnectorName={ConnectorName}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}",  ex.ConnectorName, ex.ErrorCode, ex.Message);
             }
         }
     }

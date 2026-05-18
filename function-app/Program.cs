@@ -2,9 +2,9 @@ using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Company.Function;
-using Microsoft.Azure.Connectors.DirectClient.Office365;
-using Microsoft.Azure.Connectors.DirectClient.Office365users;
-using Microsoft.Azure.Connectors.DirectClient.Teams;
+using Azure.Connectors.Sdk.Office365;
+using Azure.Connectors.Sdk.Office365Users;
+using Azure.Connectors.Sdk.Teams;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -44,24 +44,21 @@ var host = new HostBuilder()
         services.AddSingleton<TokenCredential>(credential);
 
         services.AddSingleton(sp => new TeamsClient(
-            RequireSetting("TEAMS_CONNECTION_RUNTIME_URL"),
-            sp.GetRequiredService<TokenCredential>(),
-            httpClient: null));
+            new Uri(RequireSetting("TEAMS_CONNECTION_RUNTIME_URL")),
+            sp.GetRequiredService<TokenCredential>()));
 
         // Office 365 client — used both for sender-history enrichment (GetEmailsAsync)
         // and to flag the source email (FlagAsync) once we decide it's important.
         // Same connection runtime URL the trigger uses; just consumed as a client too.
         services.AddSingleton(sp => new Office365Client(
-            RequireSetting("OFFICE365_CONNECTION_RUNTIME_URL"),
-            sp.GetRequiredService<TokenCredential>(),
-            httpClient: null));
+            new Uri(RequireSetting("OFFICE365_CONNECTION_RUNTIME_URL")),
+            sp.GetRequiredService<TokenCredential>()));
 
         // Office 365 Users client — used to look up the sender's M365 profile
         // (UserProfileAsync + ManagerAsync) for IN-ORG badging and card enrichment.
-        services.AddSingleton(sp => new Office365usersClient(
-            RequireSetting("OFFICE365USERS_CONNECTION_RUNTIME_URL"),
-            sp.GetRequiredService<TokenCredential>(),
-            httpClient: null));
+        services.AddSingleton(sp => new Office365UsersClient(
+            new Uri(RequireSetting("OFFICE365USERS_CONNECTION_RUNTIME_URL")),
+            sp.GetRequiredService<TokenCredential>()));
 
         services.AddSingleton<ImportanceClassifier>();
     })
